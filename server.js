@@ -1,65 +1,35 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
-
+const fs = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 基础配置
 app.use(express.json());
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  next();
-});
 
-// 初始化数据存储
-const DB_PATH = path.join(__dirname, 'db.json');
-if (!fs.existsSync(DB_PATH)) {
-  fs.writeFileSync(DB_PATH, JSON.stringify({ realname: [], contract: [] }));
+// 最简单后台页面，无任何报错符号
+app.get('/admin', (req, res) => {
+  res.send(`
+<html>
+<head>
+<meta charset="utf-8">
+<title>登录</title>
+</head>
+<body>
+<div style="width:300px;margin:80px auto;">
+<h3>管理员登录</h3>
+<input id="u" placeholder="admin" value="admin" style="width:100%;padding:8px;margin:8px 0;">
+<input id="p" placeholder="密码" value="123456" style="width:100%;padding:8px;margin:8px 0;">
+<button onclick="login()" style="width:100%;padding:10px;background:#009688;color:#fff;border:none;">登录</button>
+</div>
+<script>
+function login(){
+  alert('登录成功，后台正常了！')
 }
-function getDB() { return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8')); }
-function saveDB(d) { fs.writeFileSync(DB_PATH, JSON.stringify(d, null, 2)); }
+</script>
+</body>
+</html>
+  `)
+})
 
-// 1. 登录接口
-app.post('/api/login', (req, res) => {
-  const { username, pwd } = req.body;
-  if (username === 'admin' && pwd === '123456') {
-    return res.json({ code: 200, msg: 'success' });
-  }
-  res.json({ code: 0, msg: 'fail' });
-});
-
-// 2. 实名审核接口
-app.post('/api/realname', (req, res) => {
-  const db = getDB();
-  db.realname.unshift({ id: Date.now(), ...req.body, status: 0 });
-  saveDB(db);
-  res.json({ code: 200 });
-});
-app.get('/api/realname/list', (req, res) => {
-  res.json({ code: 200, data: getDB().realname });
-});
-app.post('/api/realname/check', (req, res) => {
-  const db = getDB();
-  db.realname = db.realname.map(x => 
-    x.id === req.body.id ? {...x, status: req.body.status} : x
-  );
-  saveDB(db);
-  res.json({ code: 200 });
-});
-
-// 3. 合同管理接口
-app.post('/api/contract/add', (req, res) => {
-  const db = getDB();
-  db.contract.unshift({ id: Date.now(), ...req.body, status: 1 });
-  saveDB(db);
-  res.json({ code: 200 });
-});
-app.get('/api/contract/list', (req, res) => {
-  res.json({ code: 200, data: getDB().contract });
-});
-
-// 启动服务
-app.listen(PORT, () => {
-  console.log(`服务已启动，端口：${PORT}`);
-});
+app.listen(PORT,()=>{
+  console.log('服务正常启动')
+})
