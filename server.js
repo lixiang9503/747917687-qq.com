@@ -108,7 +108,14 @@ app.post('/api/contract/add',(req,res)=>{
   const db = getDB();
   const cont = {
     id: Date.now(),
-    ...req.body,
+    lendName: req.body.lendName,
+    borrowName: req.body.borrowName,
+    money: req.body.money,
+    yearRate: req.body.yearRate,
+    payWay: req.body.payWay,
+    status: req.body.status || 1,
+    startDate: req.body.startDate,
+    endDate: req.body.endDate,
     createTime: new Date().toLocaleString()
   }
   db.contract.unshift(cont);
@@ -216,23 +223,21 @@ async function loadRealname(){
   let html = '';
   res.data.forEach(item=>{
     let st = item.status===0?'待审核':item.status===1?'已通过':'已驳回';
-    html += `
-    <tr>
-      <td>${item.userId}</td>
-      <td>${item.realName}</td>
-      <td>${item.phone}</td>
-      <td>${item.idCard}</td>
-      <td>
-        < img src="${item.cardFront}" onclick="openImg('${item.cardFront}')">
-        < img src="${item.cardBack}" onclick="openImg('${item.cardBack}')">
-      </td>
-      <td>${st}</td>
-      <td>
-        <button onclick="checkReal(${item.id},1)">通过</button>
-        <button onclick="checkReal(${item.id},2)">驳回</button>
-      </td>
-    </tr>
-    `
+    html += '<tr>' +
+      '<td>' + item.userId + '</td>' +
+      '<td>' + item.realName + '</td>' +
+      '<td>' + item.phone + '</td>' +
+      '<td>' + item.idCard + '</td>' +
+      '<td>' +
+        '< img src="' + item.cardFront + '" onclick="openImg(\'' + item.cardFront + '\')">' +
+        '< img src="' + item.cardBack + '" onclick="openImg(\'' + item.cardBack + '\')">' +
+      '</td>' +
+      '<td>' + st + '</td>' +
+      '<td>' +
+        '<button onclick="checkReal(' + item.id + ',1)">通过</button>' +
+        '<button onclick="checkReal(' + item.id + ',2)">驳回</button>' +
+      '</td>' +
+    '</tr>';
   })
   document.getElementById('realnameBody').innerHTML = html;
 }
@@ -248,15 +253,14 @@ async function loadContract(){
   let res = await fetch('/admin/contract/list').then(d=>d.json());
   let html='';
   res.data.forEach(item=>{
-    html += `
-    <tr>
-      <td>${item.lendName||''}</td>
-      <td>${item.borrowName||''}</td>
-      <td>${item.money||''}</td>
-      <td>${item.yearRate||''}</td>
-      <td>${item.status==1?'待签':item.status==2?'使用中':item.status==3?'已逾期':'已结清'}</td>
-    </tr>
-    `
+    let statusText = item.status==1?'待签':item.status==2?'使用中':item.status==3?'已逾期':'已结清';
+    html += '<tr>' +
+      '<td>' + (item.lendName||'') + '</td>' +
+      '<td>' + (item.borrowName||'') + '</td>' +
+      '<td>' + (item.money||'') + '</td>' +
+      '<td>' + (item.yearRate||'') + '</td>' +
+      '<td>' + statusText + '</td>' +
+    '</tr>';
   })
   document.getElementById('contractBody').innerHTML = html;
 }
