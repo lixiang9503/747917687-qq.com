@@ -20,13 +20,17 @@ if (!fs.existsSync(DB_PATH)) {
   fs.writeFileSync(DB_PATH, JSON.stringify({
     realname: [],
     contract: [],
-    authorizedAccounts: [] // 授权打合同的账号列表
+    authorizedAccounts: []
   }, null, 2));
 }
 
 // 工具函数
-function getDB() { return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8')); }
-function saveDB(data) { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2)); }
+function getDB() {
+  return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+}
+function saveDB(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
 
 // ========== 1. 登录接口 ==========
 app.post('/api/login', (req, res) => {
@@ -38,7 +42,6 @@ app.post('/api/login', (req, res) => {
 });
 
 // ========== 2. 实名审核接口 ==========
-// 接收用户实名提交（小程序调用）
 app.post('/api/realname', (req, res) => {
   const { userId, realName, phone, idCard, cardFront, cardBack } = req.body;
   if (!userId || !realName || !phone || !idCard || !cardFront || !cardBack) {
@@ -48,18 +51,16 @@ app.post('/api/realname', (req, res) => {
   db.realname.unshift({
     id: Date.now(),
     userId, realName, phone, idCard, cardFront, cardBack,
-    status: 0 // 0:待审核 1:已通过 2:已驳回
+    status: 0
   });
   saveDB(db);
   res.json({ code: 200, msg: '提交成功，等待审核' });
 });
 
-// 获取实名列表（后台调用）
 app.get('/api/realname/list', (req, res) => {
   res.json({ code: 200, data: getDB().realname });
 });
 
-// 审核实名（后台调用）
 app.post('/api/realname/check', (req, res) => {
   const { id, status } = req.body;
   if (![1, 2].includes(status)) {
@@ -74,12 +75,10 @@ app.post('/api/realname/check', (req, res) => {
 });
 
 // ========== 3. 授权账号接口 ==========
-// 获取授权列表（后台调用）
 app.get('/api/authorized/list', (req, res) => {
   res.json({ code: 200, data: getDB().authorizedAccounts });
 });
 
-// 添加授权账号（后台调用）
 app.post('/api/authorized/add', (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.json({ code: 400, msg: '账号不能为空' });
@@ -92,7 +91,6 @@ app.post('/api/authorized/add', (req, res) => {
   res.json({ code: 200, msg: '授权成功' });
 });
 
-// 移除授权账号（后台调用）
 app.post('/api/authorized/remove', (req, res) => {
   const { userId } = req.body;
   const db = getDB();
@@ -101,7 +99,6 @@ app.post('/api/authorized/remove', (req, res) => {
   res.json({ code: 200, msg: '移除成功' });
 });
 
-// 检查账号是否授权（小程序调用）
 app.get('/api/authorized/check/:userId', (req, res) => {
   const { userId } = req.params;
   const isAuth = getDB().authorizedAccounts.includes(userId);
@@ -109,7 +106,6 @@ app.get('/api/authorized/check/:userId', (req, res) => {
 });
 
 // ========== 4. 合同管理接口 ==========
-// 创建合同（小程序调用，仅授权账号可调用）
 app.post('/api/contract/add', (req, res) => {
   const { userId, lendName, borrowName, money, yearRate } = req.body;
   if (!getDB().authorizedAccounts.includes(userId)) {
@@ -118,13 +114,12 @@ app.post('/api/contract/add', (req, res) => {
   const db = getDB();
   db.contract.unshift({
     id: Date.now(), userId, lendName, borrowName, money, yearRate,
-    status: 1 // 1:待签 2:使用中 3:已逾期 4:已结清
+    status: 1
   });
   saveDB(db);
   res.json({ code: 200, msg: '合同创建成功' });
 });
 
-// 获取合同列表（后台调用）
 app.get('/api/contract/list', (req, res) => {
   res.json({ code: 200, data: getDB().contract });
 });
@@ -162,7 +157,6 @@ app.get('/admin', (req, res) => {
   </style>
 </head>
 <body>
-  <!-- 登录界面 -->
   <div class="login-box" id="loginBox">
     <h3>管理员登录</h3>
     <input type="text" id="username" placeholder="账号" value="admin">
@@ -170,7 +164,6 @@ app.get('/admin', (req, res) => {
     <button onclick="handleLogin()">立即登录</button>
   </div>
 
-  <!-- 后台主界面 -->
   <div class="container" id="mainBox">
     <div class="tab-bar">
       <button class="tab-btn active" onclick="switchTab(1)">实名审核</button>
@@ -178,7 +171,6 @@ app.get('/admin', (req, res) => {
       <button class="tab-btn" onclick="switchTab(3)">授权账号</button>
     </div>
 
-    <!-- 实名审核 -->
     <div class="tab-content" id="tab1" style="display:block;">
       <h4>用户实名审核列表</h4>
       <table>
@@ -190,7 +182,6 @@ app.get('/admin', (req, res) => {
       </table>
     </div>
 
-    <!-- 合同管理 -->
     <div class="tab-content" id="tab2">
       <h4>合同列表</h4>
       <table>
@@ -202,7 +193,6 @@ app.get('/admin', (req, res) => {
       </table>
     </div>
 
-    <!-- 授权账号管理 -->
     <div class="tab-content" id="tab3">
       <h4>授权打合同账号管理</h4>
       <div class="auth-input">
@@ -216,7 +206,6 @@ app.get('/admin', (req, res) => {
     </div>
   </div>
 
-  <!-- 图片预览弹窗 -->
   <div class="modal" id="imgModal" onclick="closeModal()">
     <div class="modal-content" onclick="event.stopPropagation()">
       < img id="previewImg" src="">
@@ -227,7 +216,6 @@ app.get('/admin', (req, res) => {
 <script>
   const BASE_URL = '';
 
-  // 登录
   function handleLogin() {
     const u = document.getElementById('username').value;
     const p = document.getElementById('pwd').value;
@@ -251,7 +239,6 @@ app.get('/admin', (req, res) => {
     .catch(err => alert('请求失败：服务未启动'));
   }
 
-  // 切换标签
   function switchTab(n) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
@@ -259,7 +246,6 @@ app.get('/admin', (req, res) => {
     document.getElementById('tab' + n).style.display = 'block';
   }
 
-  // 加载实名列表
   function loadRealname() {
     fetch(BASE_URL + '/api/realname/list')
     .then(res => res.json())
@@ -272,8 +258,8 @@ app.get('/admin', (req, res) => {
           '<td>' + item.realName + '</td>' +
           '<td>' + item.phone + '</td>' +
           '<td>' + item.idCard + '</td>' +
-          '<td>< img src="' + item.cardFront + '" onclick="previewImg(\'' + item.cardFront + '\')"></td>' +
-          '<td>< img src="' + item.cardBack + '" onclick="previewImg(\'' + item.cardBack + '\')"></td>' +
+          '<td>< img src="' + item.cardFront + '" onclick="previewImg(\\'' + item.cardFront + '\\')"></td>' +
+          '<td>< img src="' + item.cardBack + '" onclick="previewImg(\\'' + item.cardBack + '\\')"></td>' +
           '<td>' + status + '</td>' +
           '<td>' +
             '<button class="small" onclick="checkRealname(' + item.id + ', 1)">通过</button>' +
@@ -285,11 +271,23 @@ app.get('/admin', (req, res) => {
     });
   }
 
-  // 审核实名
   function checkRealname(id, status) {
     fetch(BASE_URL + '/api/realname/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, status })
     })
-    .then(res => res.jso
+    .then(res => res.json())
+    .then(data => {
+      alert(data.msg);
+      loadRealname();
+    });
+  }
+
+  function loadContract() {
+    fetch(BASE_URL + '/api/contract/list')
+    .then(res => res.json())
+    .then(data => {
+      let html = '';
+      data.data.forEach(item => {
+        const status = item.status === 1 ? '待签' : item.status === 2 ? '使用中' : item.status === 3 ? 
