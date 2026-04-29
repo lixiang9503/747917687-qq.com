@@ -18,13 +18,9 @@ function parseBody(req) {
     return new Promise((resolve) => {
         let body = '';
         req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try { resolve(body ? JSON.parse(body) : {}); }
-            catch (e) { resolve({}); }
-        });
+        req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch (e) { resolve({}); } });
     });
 }
-
 function signToken(payload) { return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' }); }
 function verifyToken(token) { try { return jwt.verify(token, JWT_SECRET); } catch (e) { return null; } }
 function sendJson(res, data, code = 200) {
@@ -42,7 +38,7 @@ const server = http.createServer(async (req, res) => {
     const path = url.pathname;
     const body = await parseBody(req);
 
-    // ========== PUBLIC ROUTES ==========
+    // ========== 公共路由 ==========
     if (path === '/api/loan/login' && req.method === 'POST') {
         const { openid } = body;
         if (!openid) return sendJson(res, { code: 400, message: 'openid required' });
@@ -58,7 +54,7 @@ const server = http.createServer(async (req, res) => {
 
     if (path === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-    // ========== AUTH MIDDLEWARE ==========
+    // ========== 鉴权中间件（后台接口跳过） ==========
     let currentUser = null;
     if (!path.startsWith('/api/admin/')) {
         const auth = req.headers['authorization'];
@@ -69,10 +65,10 @@ const server = http.createServer(async (req, res) => {
         if (!currentUser) return sendJson(res, { code: 404, message: 'User not found' });
     }
 
-    // ========== USER ROUTES ==========
+    // ========== 用户接口 ==========
     if (path === '/api/loan/realname' && req.method === 'POST') {
         const { realName, idCard } = body;
-        if (!realName || !idCard) return sendJson(res, { code: 400, message: 'Name and ID required' });
+        if (!realName || !idCard) return sendJson(res, { code: 400, message: '缺少信息' });
         currentUser.realName = realName;
         currentUser.idCard = idCard;
         currentUser.realStatus = 'verified';
@@ -89,10 +85,10 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, authorized: db.authorizedNames.includes(currentUser.realName) });
     }
 
-    // ========== CONTRACT ROUTES ==========
+    // ========== 合同接口 ==========
+    // 合同列表：测试阶段返回所有合同
     if (path === '/api/loan/contract/list' && req.method === 'GET') {
-        const list = db.contracts.filter(c => c.lenderOpenid === currentUser.openid || c.borrowerOpenid === currentUser.openid);
-        return sendJson(res, { code: 200, data: list });
+        return sendJson(res, { code: 200, data: db.contracts });
     }
 
     if (path === '/api/loan/contract/detail' && req.method === 'GET') {
@@ -103,8 +99,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (path === '/api/loan/contract/create' && req.method === 'POST') {
-        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: 'Please verify first' });
-        if (!db.authorizedNames.includes(currentUser.realName)) return sendJson(res, { code: 403, message: 'Not authorized' }, 403);
+        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
+        if (!db.authorizedNames.includes(currentUser.realName)) return sendJson(res, { code: 403, message: '未授权' });
         const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature } = body;
         const contract = {
             id: Date.now(),
@@ -126,7 +122,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (path === '/api/loan/contract/sign' && req.method === 'POST') {
-        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: 'Please verify first' });
+        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: '未实名' });
         const { contractId, borrowerSignature } = body;
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404 }, 404);
@@ -160,7 +156,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, contract });
     }
 
-    // ========== ADMIN ROUTES ==========
+    // ========== 后台管理接口 ==========
     if (path === '/api/admin/realname' && req.method === 'GET') return sendJson(res, { code: 200, data: db.realApplications });
     if (path === '/api/admin/contracts' && req.method === 'GET') return sendJson(res, { code: 200, data: db.contracts });
     if (path === '/api/admin/auth/list' && req.method === 'GET') return sendJson(res, { code: 200, data: db.authorizedNames });
