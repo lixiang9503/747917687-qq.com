@@ -7,29 +7,26 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f0f2f5;display:flex;min-height:100vh}
-.sidebar{width:220px;background:#1a1a2e;color:#fff;position:fixed;top:0;left:0;bottom:0;overflow-y:auto}
+.sidebar{width:220px;background:#1a1a2e;color:#fff;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:10}
 .sidebar-logo{padding:20px;font-size:18px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.1);text-align:center}
 .sidebar-nav{padding:10px 0}
-.nav-item{display:flex;align-items:center;padding:12px 20px;cursor:pointer;color:rgba(255,255,255,.7);font-size:14px;transition:.2s}
+.nav-item{display:flex;align-items:center;padding:12px 20px;cursor:pointer;color:rgba(255,255,255,.7);font-size:14px;transition:.2s;user-select:none}
 .nav-item:hover,.nav-item.active{background:rgba(255,255,255,.08);color:#fff}
 .nav-item.active{border-left:3px solid #4361ee;font-weight:600}
 .nav-item .icon{margin-right:10px;font-size:16px}
 .main{margin-left:220px;flex:1;padding:24px}
-.page{display:none}
-.page.active{display:block}
 .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .card h2{font-size:18px;margin-bottom:16px;color:#1a1a2e}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #f0f2f5;font-size:13px}
 th{color:#666;font-weight:600;font-size:12px}
-.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:500;transition:.2s;margin-right:4px}
 .btn-primary{background:#4361ee;color:#fff}
 .btn-danger{background:#ef4444;color:#fff}
 .btn-success{background:#10b981;color:#fff}
 .btn-warning{background:#f59e0b;color:#fff}
 .btn-secondary{background:#e5e7eb;color:#333}
 .btn-sm{padding:4px 10px;font-size:11px}
-.btn{margin-right:4px}
 .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
 .badge-success{background:#d1fae5;color:#065f46}
 .badge-warning{background:#fef3c7;color:#92400e}
@@ -39,16 +36,14 @@ th{color:#666;font-weight:600;font-size:12px}
 .input-field{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;width:200px;margin-right:8px}
 .input-field:focus{outline:none;border-color:#4361ee}
 .row{display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
-.filter-select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px}
 .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center}
 .modal.active{display:flex}
 .modal-content{background:#fff;border-radius:16px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto}
 .modal h3{margin-bottom:16px}
 .close-btn{float:right;background:none;border:none;font-size:20px;cursor:pointer}
-.toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;animation:fadeIn .3s}
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;display:none}
 .toast-success{background:#10b981}
 .toast-error{background:#ef4444}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -63,42 +58,35 @@ th{color:#666;font-weight:600;font-size:12px}
   </div>
 </div>
 
-<div class="main" id="mainContent">
-</div>
+<div class="main" id="mainContent"></div>
 
-<div class="modal" id="modal">
-  <div class="modal-content" id="modalContent"></div>
-</div>
+<div class="modal" id="modal"><div class="modal-content" id="modalContent"></div></div>
+<div id="toast" class="toast"></div>
 
-<div id="toast" class="toast" style="display:none"></div>
-
-<script>const API = 'https://seven47917687-qq-com.onrender.com';
+<script>
+const API = 'https://seven47917687-qq-com.onrender.com';
 let currentPage = 'realname';
 
-// 页面切换
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+document.querySelectorAll('.nav-item').forEach(function(item) {
+  item.addEventListener('click', function() {
+    document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
     item.classList.add('active');
     currentPage = item.dataset.page;
     renderPage();
   });
 });
 
-function showToast(msg, type = 'success') {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.className = 'toast toast-' + type;
-  toast.style.display = 'block';
-  setTimeout(() => toast.style.display = 'none', 2500);
+function showToast(msg, type) {
+  type = type || 'success';
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type;
+  t.style.display = 'block';
+  setTimeout(function() { t.style.display = 'none'; }, 2500);
 }
 
-function openModal(title, contentHtml) {
-  document.getElementById('modalContent').innerHTML = `
-    <button class="close-btn" onclick="closeModal()">✕</button>
-    <h3>${title}</h3>
-    ${contentHtml}
-  `;
+function openModal(title, html) {
+  document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>' + title + '</h3>' + html;
   document.getElementById('modal').classList.add('active');
 }
 
@@ -107,12 +95,12 @@ function closeModal() {
 }
 
 async function api(path) {
-  const res = await fetch(API + path);
+  var res = await fetch(API + path);
   return await res.json();
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(API + path, {
+  var res = await fetch(API + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -120,259 +108,179 @@ async function apiPost(path, body) {
   return await res.json();
 }
 
-// ========== 渲染页面 ==========
 async function renderPage() {
-  const main = document.getElementById('mainContent');
-  switch(currentPage) {
-    case 'realname': await renderRealname(main); break;
-    case 'contracts': await renderContracts(main); break;
-    case 'auth': await renderAuth(main); break;
-    case 'accounts': await renderAccounts(main); break;
-  }
+  var main = document.getElementById('mainContent');
+  if (currentPage === 'realname') await renderRealname(main);
+  else if (currentPage === 'contracts') await renderContracts(main);
+  else if (currentPage === 'auth') await renderAuth(main);
+  else if (currentPage === 'accounts') await renderAccounts(main);
 }
 
-// ========== 1. 实名审核 ==========
+// ========== 实名审核 ==========
 async function renderRealname(main) {
-  const data = await api('/api/admin/realname');
-  const list = data.data || [];
-  main.innerHTML = `
-    <div class="card">
-      <h2>实名审核 (共${list.length}条)</h2>
-      <table>
-        <tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>时间</th><th>操作</th></tr>
-        ${list.map(r => `
-          <tr>
-            <td>${r.id}</td>
-            <td>${r.realName}</td>
-            <td>${r.idCard}</td>
-            <td><span class="badge ${r.status==='approved'?'badge-success':'badge-warning'}">${r.status==='approved'?'已通过':'待审核'}</span></td>
-            <td>${r.time}</td>
-            <td>
-              ${r.status!=='approved' ? `<button class="btn btn-primary btn-sm" onclick="approveReal(${r.id})">手动通过</button>` : '-'}
-            </td>
-          </tr>
-        `).join('')}
-      </table>
-    </div>
-  `;
+  var data = await api('/api/admin/realname');
+  var list = data.data || [];
+  var html = '<div class="card"><h2>实名审核 (共' + list.length + '条)</h2><table><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>时间</th><th>操作</th></tr>';
+  list.forEach(function(r) {
+    html += '<tr><td>' + r.id + '</td><td>' + r.realName + '</td><td>' + r.idCard + '</td>';
+    html += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
+    html += '<td>' + r.time + '</td><td>';
+    html += r.status !== 'approved' ? '<button class="btn btn-primary btn-sm" onclick="approveReal(' + r.id + ')">手动通过</button>' : '-';
+    html += '</td></tr>';
+  });
+  html += '</table></div>';
+  main.innerHTML = html;
 }
 
 async function approveReal(id) {
-  const res = await apiPost('/api/admin/realname/approve', { applicationId: id });
-  if (res.code === 200) {
-    showToast('已通过');
-    renderPage();
-  } else {
-    showToast(res.message || '失败', 'error');
-  }
+  var res = await apiPost('/api/admin/realname/approve', { applicationId: id });
+  showToast(res.code === 200 ? '已通过' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
 }
 
-// ========== 2. 合同管理 ==========
+// ========== 合同管理 ==========
 async function renderContracts(main) {
-  const data = await api('/api/admin/contracts');
-  const list = data.data || [];
-  main.innerHTML = `
-    <div class="card">
-      <h2>合同管理 (共${list.length}条)</h2>
-      <div class="row">
-        <select class="filter-select" id="statusFilter" onchange="renderContractsFilter()">
-          <option value="">全部状态</option>
-          <option value="pending">待签</option>
-          <option value="active">使用中</option>
-          <option value="overdue">已逾期</option>
-          <option value="closed">已结清</option>
-        </select>
-      </div>
-      <table>
-        <tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>利率</th><th>借款日期</th><th>还款日期</th><th>状态</th><th>操作</th></tr>
-        ${list.map(c => `
-          <tr>
-            <td>${c.id}</td>
-            <td>${c.lenderName}</td>
-            <td>${c.borrowerName || '-'}</td>
-            <td>¥${c.amount}</td>
-            <td>${c.rate}%</td>
-            <td>${c.startDate}</td>
-            <td>${c.endDate}</td>
-            <td><span class="badge ${getStatusBadge(c.status)}">${getStatusText(c.status)}</span></td>
-            <td><button class="btn btn-secondary btn-sm" onclick="viewContract(${c.id})">详情</button></td>
-          </tr>
-        `).join('')}
-      </table>
-    </div>
-  `;
+  var data = await api('/api/admin/contracts');
+  var list = data.data || [];
+  var html = '<div class="card"><h2>合同管理 (共' + list.length + '条)</h2><table><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>利率</th><th>借款日期</th><th>还款日期</th><th>状态</th><th>操作</th></tr>';
+  list.forEach(function(c) {
+    html += '<tr><td>' + c.id + '</td><td>' + c.lenderName + '</td><td>' + (c.borrowerName || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.rate + '%</td><td>' + c.startDate + '</td><td>' + c.endDate + '</td>';
+    html += '<td><span class="badge ' + getStatusBadge(c.status) + '">' + getStatusText(c.status) + '</span></td>';
+    html += '<td><button class="btn btn-secondary btn-sm" onclick="viewContract(' + c.id + ')">详情</button></td></tr>';
+  });
+  html += '</table></div>';
+  main.innerHTML = html;
 }
 
-async function renderContractsFilter() {
-  const status = document.getElementById('statusFilter').value;
-  const data = await api('/api/admin/contracts');
-  let list = data.data || [];
-  if (status) list = list.filter(c => c.status === status);
-  const main = document.getElementById('mainContent');
-  main.querySelector('table').innerHTML = `
-    <tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>利率</th><th>借款日期</th><th>还款日期</th><th>状态</th><th>操作</th></tr>
-    ${list.map(c => `
-      <tr>
-        <td>${c.id}</td>
-        <td>${c.lenderName}</td>
-        <td>${c.borrowerName || '-'}</td>
-        <td>¥${c.amount}</td>
-        <td>${c.rate}%</td>
-        <td>${c.startDate}</td>
-        <td>${c.endDate}</td>
-        <td><span class="badge ${getStatusBadge(c.status)}">${getStatusText(c.status)}</span></td>
-        <td><button class="btn btn-secondary btn-sm" onclick="viewContract(${c.id})">详情</button></td>
-      </tr>
-    `).join('')}
-  `;
-}
-
-function getStatusBadge(status) {
-  if (status === 'pending') return 'badge-warning';
-  if (status === 'active') return 'badge-info';
-  if (status === 'overdue') return 'badge-danger';
-  if (status === 'closed') return 'badge-success';
+function getStatusBadge(s) {
+  if (s === 'pending') return 'badge-warning';
+  if (s === 'active') return 'badge-info';
+  if (s === 'overdue') return 'badge-danger';
+  if (s === 'closed') return 'badge-success';
   return 'badge-gray';
 }
 
-function getStatusText(status) {
-  if (status === 'pending') return '待签';
-  if (status === 'active') return '使用中';
-  if (status === 'overdue') return '已逾期';
-  if (status === 'closed') return '已结清';
-  return status;
+function getStatusText(s) {
+  if (s === 'pending') return '待签';
+  if (s === 'active') return '使用中';
+  if (s === 'overdue') return '已逾期';
+  if (s === 'closed') return '已结清';
+  return s;
 }
 
 async function viewContract(id) {
-  const data = await api('/api/admin/contracts');
-  const c = (data.data || []).find(x => x.id === id);
+  var data = await api('/api/admin/contracts');
+  var c = (data.data || []).find(function(x) { return x.id === id; });
   if (!c) return;
-  openModal('合同详情', `
-    <p><b>出借人：</b>${c.lenderName} (${c.lenderIdCard})</p >
-    <p><b>借款人：</b>${c.borrowerName || '-'} (${c.borrowerIdCard || '-'})</p >
-    <p><b>金额：</b>¥${c.amount} (${c.amountChinese || ''})</p >
-    <p><b>年利率：</b>${c.rate}%</p >
-    <p><b>事由：</b>${c.reason}</p >
-    <p><b>支付方式：</b>${c.payMethod}</p >
-    <p><b>借款期间：</b>${c.startDate} ~ ${c.endDate}</p >
-    <p><b>还款方式：</b>一次性还本付息</p >
-    <p><b>状态：</b>${getStatusText(c.status)}</p >
-    <p><b>创建时间：</b>${c.createTime}</p >
-    <p><b>出借人签名：</b>${c.lenderSignature ? '已签' : '未签'}</p >
-    <p><b>借款人签名：</b>${c.borrowerSignature ? '已签' : '未签'}</p >
-  `);
+  openModal('合同详情',
+    '<p><b>出借人：</b>' + c.lenderName + ' (' + c.lenderIdCard + ')</p>' +
+    '<p><b>借款人：</b>' + (c.borrowerName || '-') + ' (' + (c.borrowerIdCard || '-') + ')</p>' +
+    '<p><b>金额：</b>¥' + c.amount + '</p>' +
+    '<p><b>年利率：</b>' + c.rate + '%</p>' +
+    '<p><b>事由：</b>' + c.reason + '</p>' +
+    '<p><b>支付方式：</b>' + c.payMethod + '</p>' +
+    '<p><b>借款期间：</b>' + c.startDate + ' ~ ' + c.endDate + '</p>' +
+    '<p><b>状态：</b>' + getStatusText(c.status) + '</p>' +
+    '<p><b>创建时间：</b>' + c.createTime + '</p>' +
+    '<p><b>出借人签名：</b>' + (c.lenderSignature ? '已签' : '未签') + '</p>' +
+    '<p><b>借款人签名：</b>' + (c.borrowerSignature ? '已签' : '未签') + '</p>'
+  );
 }
 
-// ========== 3. 授权管理 ==========
+// ========== 授权管理 ==========
 async function renderAuth(main) {
-  const data = await api('/api/admin/auth/list');
-  const list = data.data || [];
-  main.innerHTML = `
-    <div class="card">
-      <h2>授权管理</h2>
-      <div class="row">
-        <input type="text" class="input-field" id="authNameInput" placeholder="输入用户真实姓名">
-        <button class="btn btn-primary" onclick="addAuth()">添加授权</button>
-      </div>
-      <table>
-        <tr><th>序号</th><th>姓名</th><th>操作</th></tr>
-        ${list.map((name, i) => `
-          <tr>
-            <td>${i+1}</td>
-            <td>${name}</td>
-            <td><button class="btn btn-danger btn-sm" onclick="removeAuth('${name}')">取消授权</button></td>
-          </tr>
-        `).join('')}
-      </table>
-    </div>
-  `;
+  var data = await api('/api/admin/auth/list');
+  var list = data.data || [];
+  var html = '<div class="card"><h2>授权管理</h2><div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="输入用户真实姓名"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div><table><tr><th>序号</th><th>姓名</th><th>操作</th></tr>';
+  list.forEach(function(name, i) {
+    html += '<tr><td>' + (i + 1) + '</td><td>' + name + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + name + '\')">取消授权</button></td></tr>';
+  });
+  html += '</table></div>';
+  main.innerHTML = html;
 }
 
 async function addAuth() {
-  const name = document.getElementById('authNameInput').value.trim();
+  var name = document.getElementById('authNameInput').value.trim();
   if (!name) return showToast('请输入姓名', 'error');
-  const res = await apiPost('/api/admin/auth/add', { name });
-  if (res.code === 200) {
-    showToast('授权成功');
-    renderPage();
-  } else {
-    showToast(res.message || '失败', 'error');
-  }
+  var res = await apiPost('/api/admin/auth/add', { name: name });
+  showToast(res.code === 200 ? '授权成功' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
 }
 
 async function removeAuth(name) {
-  const res = await apiPost('/api/admin/auth/remove', { name });
-  if (res.code === 200) {
-    showToast('已取消授权');
-    renderPage();
-  } else {
-    showToast(res.message || '失败', 'error');
-  }
+  var res = await apiPost('/api/admin/auth/remove', { name: name });
+  showToast(res.code === 200 ? '已取消授权' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
 }
 
-// ========== 4. 账号管理 ==========
+// ========== 账号管理 ==========
 async function renderAccounts(main) {
-  const data = await api('/api/admin/users');
-  const list = data.data || [];
-  main.innerHTML = `
-    <div class="card">
-      <h2>账号管理 (共${list.length}条)</h2>
-      <table>
-        <tr><th>OpenID</th><th>真实姓名</th><th>实名状态</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr>
-        ${list.map(u => `
-          <tr>
-            <td>${u.openid}</td>
-            <td>${u.realName || '-'}</td>
-            <td>${u.realStatus === 'verified' ? '已实名' : '未实名'}</td>
-            <td>${u.authorized ? '已授权' : '未授权'}</td>
-            <td>${u.blacked ? '已拉黑' : '正常'}</td>
-            <td>
-              <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.openid}')">删除账号</button>
-              ${u.blacked 
-                ? `<button class="btn btn-success btn-sm" onclick="unblackAccount('${u.openid}')">解除拉黑</button>`
-                : `<button class="btn btn-warning btn-sm" onclick="blackAccount('${u.openid}')">拉黑账号</button>`
-              }
-            </td>
-          </tr>
-        `).join('')}
-      </table>
-    </div>
-    <div class="card">
-      <h2>拉黑IP管理</h2>
-      <div class="row">
-        <input type="text" class="input-field" id="ipInput" placeholder="输入IP地址">
-        <button class="btn btn-danger" onclick="blackIp()">拉黑IP</button>
-      </div>
-      <div id="ipList"></div>
-    </div>
-  `;
+  var data = await api('/api/admin/users');
+  var list = data.data || [];
+  var html = '<div class="card"><h2>账号管理 (共' + list.length + '条)</h2><table><tr><th>OpenID</th><th>真实姓名</th><th>实名状态</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr>';
+  list.forEach(function(u) {
+    html += '<tr><td>' + u.openid + '</td><td>' + (u.realName || '-') + '</td><td>' + (u.realStatus === 'verified' ? '已实名' : '未实名') + '</td><td>' + (u.authorized ? '已授权' : '未授权') + '</td><td>' + (u.blacked ? '已拉黑' : '正常') + '</td>';
+    html += '<td><button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除账号</button> ';
+    html += u.blacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + u.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + u.openid + '\')">拉黑账号</button>';
+    html += '</td></tr>';
+  });
+  html += '</table></div><div class="card"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div><div id="ipList"></div></div>';
+  main.innerHTML = html;
   renderIpList();
 }
 
 async function renderIpList() {
-  const data = await api('/api/admin/users');
-  const container = document.getElementById('ipList');
+  var container = document.getElementById('ipList');
   if (!container) return;
-  // 从全局获取黑名单IP需要额外接口，这里简化用localStorage
-  let ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
-  container.innerHTML = ips.map(ip => `
-    <span style="display:inline-block;margin:4px;padding:6px 12px;background:#fee2e2;border-radius:8px;">
-      ${ip} <button style="background:none;border:none;cursor:pointer;color:#ef4444;" onclick="unblackIp('${ip}')">✕</button>
-    </span>
-  `).join('');
+  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
+  container.innerHTML = ips.map(function(ip) {
+    return '<span style="display:inline-block;margin:4px;padding:6px 12px;background:#fee2e2;border-radius:8px;">' + ip + ' <button style="background:none;border:none;cursor:pointer;color:#ef4444;" onclick="unblackIp(\'' + ip + '\')">✕</button></span>';
+  }).join('');
 }
 
 async function blackAccount(openid) {
-  const res = await apiPost('/api/admin/black/account', { openid });
-  if (res.code === 200) {
-    showToast('已拉黑');
-    renderPage();
-  } else {
-    showToast(res.message || '失败', 'error');
-  }
+  var res = await apiPost('/api/admin/black/account', { openid: openid });
+  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
 }
 
 async function unblackAccount(openid) {
-  const res = await apiPost('/api/admin/black/unaccount', { openid });
-  if (res.code === 200) {
-   
+  var res = await apiPost('/api/admin/black/unaccount', { openid: openid });
+  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+
+async function deleteUser(openid) {
+  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
+  var res = await apiPost('/api/admin/user/delete', { openid: openid });
+  showToast(res.code === 200 ? '已删除' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+
+async function blackIp() {
+  var ip = document.getElementById('ipInput').value.trim();
+  if (!ip) return showToast('请输入IP', 'error');
+  var res = await apiPost('/api/admin/black/ip', { ip: ip });
+  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
+  if (res.code === 200 && ips.indexOf(ip) === -1) {
+    ips.push(ip);
+    localStorage.setItem('blackIps', JSON.stringify(ips));
+  }
+  showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
+  renderIpList();
+}
+
+async function unblackIp(ip) {
+  var res = await apiPost('/api/admin/black/unip', { ip: ip });
+  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
+  ips = ips.filter(function(i) { return i !== ip; });
+  localStorage.setItem('blackIps', JSON.stringify(ips));
+  showToast(res.code === 200 ? 'IP已解除' : '失败', res.code === 200 ? 'success' : 'error');
+  renderIpList();
+}
+
+// 初始化
+renderPage();
+</script>
+</body>
+</html>
