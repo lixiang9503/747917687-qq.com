@@ -11,6 +11,7 @@ function loadDb() {
     catch (e) { return { users: [], realApplications: [], contracts: [], authorizedNames: [], blackAccounts: [], blackIps: [] }; }
 }
 function saveDb(db) { fs.writeFileSync(dbFile, JSON.stringify(db, null, 2), 'utf8'); }
+
 let db = loadDb();
 
 function parseBody(req) {
@@ -22,8 +23,8 @@ function parseBody(req) {
 }
 function signToken(payload) { return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' }); }
 function verifyToken(token) { try { return jwt.verify(token, JWT_SECRET); } catch (e) { return null; } }
-function sendJson(res, data, statusCode = 200) {
-    res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+function sendJson(res, data, code = 200) {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify(data));
 }
 
@@ -35,11 +36,10 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, 'http://' + req.headers.host);
     const path = url.pathname;
-    const method = req.method;
     const body = await parseBody();
 
-    // ========== PUBLIC ==========
-    if (path === '/api/loan/login' && method === 'POST') {
+    // ========== 公共路由 ==========
+    if (path === '/api/loan/login' && req.method === 'POST') {
         const { openid } = body;
         if (!openid) return sendJson(res, { code: 400, message: 'openid required' });
         let user = db.users.find(u => u.openid === openid);
@@ -54,75 +54,61 @@ const server = http.createServer(async (req, res) => {
 
     if (path === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-    // ========== AUTH MIDDLEWARE (skip admin) ==========
+    // ========== 鉴权中间件（后台接口跳过） ==========
     let currentUser = null;
     if (!path.startsWith('/api/admin/')) {
-        const authHeader = req.headers['authorization'];
-        if (!authHeader || !authHeader.startsWith('Bearer ')) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const token = authHeader.split(' ')[1];
-        const decoded = verifyToken(token);
+        const auth = req.headers['authorization'];
+        if (!auth || !auth.startsWith('Bearer ')) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+        const decoded = verifyToken(auth.split(' ')[1]);
         if (!decoded) return sendJson(res, { code: 401, message: 'Token expired' }, 401);
         currentUser = db.users.find(u => u.openid === decoded.openid);
         if (!currentUser) return sendJson(res, { code: 404, message: 'User not found' });
     }
 
-    // ========== USER ROUTES ==========
-    if (path === '/api/loan/realname' && method === 'POST') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+    // ========== 用户接口 ==========
+    if (path === '/api/loan/realname' && req.method === 'POST') {
         const { realName, idCard } = body;
-        if (!realName || !idCard) return sendJson(res, { code: 400, message: 'Name and ID required' });
+        if (!realName || !idCard) return sendJson(res, { code: 400, message: '缺少信息' });
         currentUser.realName = realName;
         currentUser.idCard = idCard;
         currentUser.realStatus = 'verified';
         currentUser.realTime = new Date().toLocaleString('zh-CN');
         saveDb(db);
-        return sendJson(res, { code: 200, message: 'Verified', user: currentUser });
-    }
-
-    if (path === '/api/loan/user/info' && method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         return sendJson(res, { code: 200, user: currentUser });
     }
 
-    if (path === '/api/loan/checkAuth' && method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const isAuth = db.authorizedNames.includes(currentUser.realName);
-        return sendJson(res, { code: 200, authorized: isAuth });
+    if (path === '/api/loan/user/info' && req.method === 'GET') {
+        return sendJson(res, { code: 200, user: currentUser });
     }
 
-    // 合同列表（只返回当前用户的合同）
-    if (path === '/api/loan/contract/list' && method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const myContracts = db.contracts.filter(c => c.lenderOpenid === currentUser.openid || c.borrowerOpenid === currentUser.openid);
-        return sendJson(res, { code: 200, data: myContracts });
+    if (path === '/api/loan/checkAuth' && req.method === 'GET') {
+        return sendJson(res, { code: 200, authorized: db.authorizedNames.includes(currentUser.realName) });
     }
 
-    // 合同详情
-    if (path === '/api/loan/contract/detail' && method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+    // ========== 合同接口 ==========
+    if (path === '/api/loan/contract/list' && req.method === 'GET') {
+        const list = db.contracts.filter(c => c.lenderOpenid === currentUser.openid || c.borrowerOpenid === currentUser.openid);
+        return sendJson(res, { code: 200, data: list });
+    }
+
+    if (path === '/api/loan/contract/detail' && req.method === 'GET') {
         const id = parseInt(url.searchParams.get('id'));
         const contract = db.contracts.find(c => c.id === id);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
-        const isLender = contract.lenderOpenid === currentUser.openid;
-        const isBorrower = contract.borrowerOpenid === currentUser.openid;
-        return sendJson(res, { code: 200, data: contract, isLender, isBorrower });
+        return sendJson(res, { code: 200, data: contract, isLender: contract.lenderOpenid === currentUser.openid });
     }
 
-    // 创建合同
-    if (path === '/api/loan/contract/create' && method === 'POST') {
-        if (!currentUser || currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: 'Please verify first' });
-        if (!db.authorizedNames.includes(currentUser.realName)) return sendJson(res, { code: 403, message: 'Not authorized' }, 403);
+    if (path === '/api/loan/contract/create' && req.method === 'POST') {
+        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
+        if (!db.authorizedNames.includes(currentUser.realName)) return sendJson(res, { code: 403, message: '未授权' });
         const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature } = body;
         const contract = {
             id: Date.now(),
             lenderOpenid: currentUser.openid,
             lenderName: currentUser.realName,
             lenderIdCard: currentUser.idCard,
-            borrowerOpenid: '',
-            borrowerName: '',
-            borrowerIdCard: '',
-            amount: parseFloat(amount),
-            rate, reason, payMethod, startDate, endDate,
+            borrowerOpenid: '', borrowerName: '', borrowerIdCard: '',
+            amount: parseFloat(amount), rate, reason, payMethod, startDate, endDate,
             repaymentMethod: 'lumpSum',
             lenderSignature: lenderSignature || '',
             borrowerSignature: '',
@@ -132,15 +118,14 @@ const server = http.createServer(async (req, res) => {
         };
         db.contracts.push(contract);
         saveDb(db);
-        return sendJson(res, { code: 200, message: 'Contract created', contract });
+        return sendJson(res, { code: 200, contract });
     }
 
-    // 签署合同（自动绑定借款人）
-    if (path === '/api/loan/contract/sign' && method === 'POST') {
-        if (!currentUser || currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: 'Please verify first' });
+    if (path === '/api/loan/contract/sign' && req.method === 'POST') {
+        if (currentUser.realStatus !== 'verified') return sendJson(res, { code: 400, message: '未实名' });
         const { contractId, borrowerSignature } = body;
         const contract = db.contracts.find(c => c.id === contractId);
-        if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
+        if (!contract) return sendJson(res, { code: 404 }, 404);
         contract.borrowerOpenid = currentUser.openid;
         contract.borrowerName = currentUser.realName;
         contract.borrowerIdCard = currentUser.idCard;
@@ -150,64 +135,78 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Signed', contract });
     }
 
-    // 延期/结清（保持不变）
-    if (path === '/api/loan/contract/extend' && method === 'POST') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+    if (path === '/api/loan/contract/extend' && req.method === 'POST') {
         const { contractId, newEndDate, reason } = body;
         const contract = db.contracts.find(c => c.id === contractId);
-        if (!contract || contract.lenderOpenid !== currentUser.openid) return sendJson(res, { code: 403, message: 'Lender only' }, 403);
+        if (!contract || contract.lenderOpenid !== currentUser.openid) return sendJson(res, { code: 403 }, 403);
         if (!contract.extensions) contract.extensions = [];
         contract.extensions.push({ date: newEndDate, reason: reason || '手动延期', time: new Date().toLocaleString('zh-CN') });
         contract.endDate = newEndDate;
         contract.status = 'active';
         saveDb(db);
-        return sendJson(res, { code: 200, message: 'Extended', contract });
-    }
-    if (path === '/api/loan/contract/close' && method === 'POST') {
-        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const { contractId } = body;
-        const contract = db.contracts.find(c => c.id === contractId);
-        if (!contract || contract.lenderOpenid !== currentUser.openid) return sendJson(res, { code: 403, message: 'Lender only' }, 403);
-        contract.status = 'closed';
-        saveDb(db);
-        return sendJson(res, { code: 200, message: 'Closed', contract });
+        return sendJson(res, { code: 200, contract });
     }
 
-    // ========== ADMIN ROUTES (no auth for now) ==========
-    if (path === '/api/admin/realname' && method === 'GET') return sendJson(res, { code: 200, data: db.realApplications });
-    if (path === '/api/admin/contracts' && method === 'GET') return sendJson(res, { code: 200, data: db.contracts });
-    if (path === '/api/admin/auth/list' && method === 'GET') return sendJson(res, { code: 200, data: db.authorizedNames });
-    if (path === '/api/admin/auth/add' && method === 'POST') {
+    if (path === '/api/loan/contract/close' && req.method === 'POST') {
+        const { contractId } = body;
+        const contract = db.contracts.find(c => c.id === contractId);
+        if (!contract || contract.lenderOpenid !== currentUser.openid) return sendJson(res, { code: 403 }, 403);
+        contract.status = 'closed';
+        saveDb(db);
+        return sendJson(res, { code: 200, contract });
+    }
+
+    // ========== 后台管理接口 ==========
+    if (path === '/api/admin/realname' && req.method === 'GET') return sendJson(res, { code: 200, data: db.realApplications });
+    if (path === '/api/admin/contracts' && req.method === 'GET') return sendJson(res, { code: 200, data: db.contracts });
+    if (path === '/api/admin/auth/list' && req.method === 'GET') return sendJson(res, { code: 200, data: db.authorizedNames });
+    if (path === '/api/admin/auth/add' && req.method === 'POST') {
         const { name } = body;
-        if (!name) return sendJson(res, { code: 400, message: 'Name required' });
-        if (!db.authorizedNames.includes(name)) { db.authorizedNames.push(name); saveDb(db); }
+        if (!name) return sendJson(res, { code: 400 });
+        if (!db.authorizedNames.includes(name)) db.authorizedNames.push(name);
+        saveDb(db);
         return sendJson(res, { code: 200, data: db.authorizedNames });
     }
-    if (path === '/api/admin/auth/remove' && method === 'POST') {
+    if (path === '/api/admin/auth/remove' && req.method === 'POST') {
         const { name } = body;
-        db.authorizedNames = db.authorizedNames.filter(n => n !== name); saveDb(db);
+        db.authorizedNames = db.authorizedNames.filter(n => n !== name);
+        saveDb(db);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/users' && method === 'GET') return sendJson(res, { code: 200, data: db.users });
-    if (path === '/api/admin/user/delete' && method === 'POST') {
+    if (path === '/api/admin/users' && req.method === 'GET') return sendJson(res, { code: 200, data: db.users });
+    if (path === '/api/admin/user/delete' && req.method === 'POST') {
         const { openid } = body;
         db.users = db.users.filter(u => u.openid !== openid);
         db.contracts = db.contracts.filter(c => c.lenderOpenid !== openid && c.borrowerOpenid !== openid);
         saveDb(db);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/black/account' && method === 'POST') {
+    if (path === '/api/admin/black/account' && req.method === 'POST') {
         const { openid } = body;
-        if (!db.blackAccounts.includes(openid)) { db.blackAccounts.push(openid); saveDb(db); }
+        if (!db.blackAccounts.includes(openid)) db.blackAccounts.push(openid);
+        saveDb(db);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/black/ip' && method === 'POST') {
+    if (path === '/api/admin/black/unaccount' && req.method === 'POST') {
+        const { openid } = body;
+        db.blackAccounts = db.blackAccounts.filter(a => a !== openid);
+        saveDb(db);
+        return sendJson(res, { code: 200 });
+    }
+    if (path === '/api/admin/black/ip' && req.method === 'POST') {
         const { ip } = body;
-        if (!db.blackIps.includes(ip)) { db.blackIps.push(ip); saveDb(db); }
+        if (!db.blackIps.includes(ip)) db.blackIps.push(ip);
+        saveDb(db);
+        return sendJson(res, { code: 200 });
+    }
+    if (path === '/api/admin/black/unip' && req.method === 'POST') {
+        const { ip } = body;
+        db.blackIps = db.blackIps.filter(i => i !== ip);
+        saveDb(db);
         return sendJson(res, { code: 200 });
     }
 
-    sendJson(res, { code: 404, message: 'Not found' }, 404);
+    sendJson(res, { code: 404 }, 404);
 });
 
-server.listen(PORT, () => console.log('Server ready'));
+server.listen(PORT, () => console.log('Server running on port ' + PORT));
