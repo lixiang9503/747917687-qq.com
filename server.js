@@ -221,6 +221,7 @@ const server = http.createServer(async (req, res) => {
             lenderSignature: lenderSignature || '',
             borrowerSignature: '',
             status: 'pending',
+            extensions: [],  // 延期记录数组
             createTime: new Date().toLocaleString('zh-CN')
         };
         db.contracts.push(contract);
@@ -245,14 +246,21 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Signed', contract });
     }
 
+    // 延期合同（含延期记录）
     if (path === '/api/loan/contract/extend' && method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const { contractId, newEndDate } = body;
+        const { contractId, newEndDate, reason } = body;
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
         if (contract.lenderOpenid !== currentUser.openid) {
             return sendJson(res, { code: 403, message: 'Lender only' }, 403);
         }
+        if (!contract.extensions) contract.extensions = [];
+        contract.extensions.push({
+            date: newEndDate,
+            reason: reason || '手动延期',
+            time: new Date().toLocaleString('zh-CN')
+        });
         contract.endDate = newEndDate;
         contract.status = 'active';
         saveDb(db);
@@ -365,7 +373,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'IP unblocked' });
     }
 
-    // 404
     sendJson(res, { code: 404, message: 'Not found' }, 404);
 });
 
