@@ -167,22 +167,21 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, user: currentUser });
     }
 
+    // 合同列表（测试用：返回所有合同）
     if (path === '/api/loan/contract/list' && method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-        const myContracts = db.contracts.filter(c =>
-            c.lenderOpenid === currentUser.openid ||
-            c.borrowerOpenid === currentUser.openid
-        );
-        return sendJson(res, { code: 200, data: myContracts });
+        return sendJson(res, { code: 200, data: db.contracts });
     }
 
+    // 合同详情
     if (path === '/api/loan/contract/detail' && method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const contractId = parseInt(url.searchParams.get('id'));
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
         const isLender = contract.lenderOpenid === currentUser.openid;
-        return sendJson(res, { code: 200, data: contract, isLender });
+        const isBorrower = contract.borrowerOpenid === currentUser.openid;
+        return sendJson(res, { code: 200, data: contract, isLender, isBorrower });
     }
 
     if (path === '/api/loan/checkAuth' && method === 'GET') {
@@ -200,7 +199,6 @@ const server = http.createServer(async (req, res) => {
         if (!db.authorizedNames.includes(currentUser.realName)) {
             return sendJson(res, { code: 403, message: 'Not authorized' }, 403);
         }
-
         const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature, amountChinese } = body;
         const contract = {
             id: Date.now(),
@@ -221,7 +219,7 @@ const server = http.createServer(async (req, res) => {
             lenderSignature: lenderSignature || '',
             borrowerSignature: '',
             status: 'pending',
-            extensions: [],  // 延期记录数组
+            extensions: [],
             createTime: new Date().toLocaleString('zh-CN')
         };
         db.contracts.push(contract);
@@ -229,6 +227,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Contract created', contract });
     }
 
+    // 签署合同（自动绑定当前用户为借款人）
     if (path === '/api/loan/contract/sign' && method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId, borrowerSignature } = body;
@@ -246,7 +245,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Signed', contract });
     }
 
-    // 延期合同（含延期记录）
+    // 延期
     if (path === '/api/loan/contract/extend' && method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId, newEndDate, reason } = body;
@@ -267,6 +266,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Extended', contract });
     }
 
+    // 结清
     if (path === '/api/loan/contract/close' && method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId } = body;
@@ -284,7 +284,6 @@ const server = http.createServer(async (req, res) => {
     if (path === '/api/admin/realname' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.realApplications });
     }
-
     if (path === '/api/admin/realname/approve' && method === 'POST') {
         const { applicationId } = body;
         const app = db.realApplications.find(a => a.id === applicationId);
@@ -292,15 +291,12 @@ const server = http.createServer(async (req, res) => {
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Approved' });
     }
-
     if (path === '/api/admin/contracts' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.contracts });
     }
-
     if (path === '/api/admin/auth/list' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.authorizedNames });
     }
-
     if (path === '/api/admin/auth/add' && method === 'POST') {
         const { name } = body;
         if (!name) return sendJson(res, { code: 400, message: 'Name required' });
@@ -310,14 +306,12 @@ const server = http.createServer(async (req, res) => {
         }
         return sendJson(res, { code: 200, message: 'Authorized', data: db.authorizedNames });
     }
-
     if (path === '/api/admin/auth/remove' && method === 'POST') {
         const { name } = body;
         db.authorizedNames = db.authorizedNames.filter(n => n !== name);
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Removed', data: db.authorizedNames });
     }
-
     if (path === '/api/admin/users' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.users.map(u => ({
             openid: u.openid,
@@ -327,7 +321,6 @@ const server = http.createServer(async (req, res) => {
             blacked: db.blackAccounts.includes(u.openid)
         }))});
     }
-
     if (path === '/api/admin/user/delete' && method === 'POST') {
         const { openid } = body;
         db.users = db.users.filter(u => u.openid !== openid);
@@ -340,7 +333,6 @@ const server = http.createServer(async (req, res) => {
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Deleted' });
     }
-
     if (path === '/api/admin/black/account' && method === 'POST') {
         const { openid } = body;
         if (!db.blackAccounts.includes(openid)) {
@@ -349,14 +341,12 @@ const server = http.createServer(async (req, res) => {
         }
         return sendJson(res, { code: 200, message: 'Blacklisted' });
     }
-
     if (path === '/api/admin/black/unaccount' && method === 'POST') {
         const { openid } = body;
         db.blackAccounts = db.blackAccounts.filter(a => a !== openid);
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Unblacklisted' });
     }
-
     if (path === '/api/admin/black/ip' && method === 'POST') {
         const { ip } = body;
         if (!db.blackIps.includes(ip)) {
@@ -365,7 +355,6 @@ const server = http.createServer(async (req, res) => {
         }
         return sendJson(res, { code: 200, message: 'IP blocked' });
     }
-
     if (path === '/api/admin/black/unip' && method === 'POST') {
         const { ip } = body;
         db.blackIps = db.blackIps.filter(i => i !== ip);
