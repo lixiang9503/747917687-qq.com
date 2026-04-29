@@ -84,8 +84,6 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req);
 
     // ========== PUBLIC ROUTES ==========
-
-    // WeChat login (mock)
     if (path === '/api/loan/login' && method === 'POST') {
         const { openid } = body;
         if (!openid) return sendJson(res, { code: 400, message: 'openid required' });
@@ -113,41 +111,38 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Login success', token, user });
     }
 
-    // Ping
     if (path === '/ping') {
         return sendJson(res, { code: 200, message: 'ok' });
     }
 
-    // ========== AUTH MIDDLEWARE ==========
-    const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = verifyToken(token);
-    if (!decoded) {
-        return sendJson(res, { code: 401, message: 'Token expired' }, 401);
-    }
-
-    const currentUser = db.users.find(u => u.openid === decoded.openid);
-    if (!currentUser) {
-        return sendJson(res, { code: 404, message: 'User not found' });
-    }
-
-    if (db.blackAccounts.includes(currentUser.openid)) {
-        return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
+    // ========== AUTH MIDDLEWARE (skip for admin) ==========
+    let currentUser = null;
+    if (!path.startsWith('/api/admin/')) {
+        const authHeader = req.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+        }
+        const token = authHeader.split(' ')[1];
+        const decoded = verifyToken(token);
+        if (!decoded) {
+            return sendJson(res, { code: 401, message: 'Token expired' }, 401);
+        }
+        currentUser = db.users.find(u => u.openid === decoded.openid);
+        if (!currentUser) {
+            return sendJson(res, { code: 404, message: 'User not found' });
+        }
+        if (db.blackAccounts.includes(currentUser.openid)) {
+            return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
+        }
     }
 
     // ========== USER ROUTES ==========
-
-    // Submit real name (auto approve)
     if (path === '/api/loan/realname' && method === 'POST') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { realName, idCard, frontImg, backImg } = body;
         if (!realName || !idCard) {
             return sendJson(res, { code: 400, message: 'Name and ID required' });
         }
-
         const application = {
             id: Date.now(),
             openid: currentUser.openid,
@@ -159,23 +154,21 @@ const server = http.createServer(async (req, res) => {
             time: new Date().toLocaleString('zh-CN')
         };
         db.realApplications.push(application);
-
         currentUser.realName = realName;
         currentUser.idCard = idCard;
         currentUser.realStatus = 'verified';
         currentUser.realTime = new Date().toLocaleString('zh-CN');
-
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Verified', user: currentUser });
     }
 
-    // Get user info
     if (path === '/api/loan/user/info' && method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         return sendJson(res, { code: 200, user: currentUser });
     }
 
-    // Get my contracts
     if (path === '/api/loan/contract/list' && method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const myContracts = db.contracts.filter(c =>
             c.lenderOpenid === currentUser.openid ||
             c.borrowerOpenid === currentUser.openid
@@ -183,24 +176,24 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: myContracts });
     }
 
-    // Get contract detail
     if (path === '/api/loan/contract/detail' && method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const contractId = parseInt(url.searchParams.get('id'));
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
-
         const isLender = contract.lenderOpenid === currentUser.openid;
         return sendJson(res, { code: 200, data: contract, isLender });
     }
 
-    // Check auth status
     if (path === '/api/loan/checkAuth' && method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const isAuth = db.authorizedNames.includes(currentUser.realName);
         return sendJson(res, { code: 200, authorized: isAuth });
-    }    // ========== CONTRACT ROUTES ==========
+    }
 
-    // Create contract (lender signs)
+    // ========== CONTRACT ROUTES ==========
     if (path === '/api/loan/contract/create' && method === 'POST') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         if (currentUser.realStatus !== 'verified') {
             return sendJson(res, { code: 400, message: 'Please verify first' });
         }
@@ -209,7 +202,6 @@ const server = http.createServer(async (req, res) => {
         }
 
         const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature, amountChinese } = body;
-
         const contract = {
             id: Date.now(),
             lenderOpenid: currentUser.openid,
@@ -231,34 +223,30 @@ const server = http.createServer(async (req, res) => {
             status: 'pending',
             createTime: new Date().toLocaleString('zh-CN')
         };
-
         db.contracts.push(contract);
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Contract created', contract });
     }
 
-    // Borrower sign
     if (path === '/api/loan/contract/sign' && method === 'POST') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId, borrowerSignature } = body;
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
-
         if (currentUser.realStatus !== 'verified') {
             return sendJson(res, { code: 400, message: 'Please verify first' });
         }
-
         contract.borrowerOpenid = currentUser.openid;
         contract.borrowerName = currentUser.realName;
         contract.borrowerIdCard = currentUser.idCard;
         contract.borrowerSignature = borrowerSignature || '';
         contract.status = 'active';
-
         saveDb(db);
         return sendJson(res, { code: 200, message: 'Signed', contract });
     }
 
-    // Extend contract (lender only)
     if (path === '/api/loan/contract/extend' && method === 'POST') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId, newEndDate } = body;
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
@@ -271,8 +259,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Extended', contract });
     }
 
-    // Close contract (lender only)
     if (path === '/api/loan/contract/close' && method === 'POST') {
+        if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { contractId } = body;
         const contract = db.contracts.find(c => c.id === contractId);
         if (!contract) return sendJson(res, { code: 404, message: 'Not found' });
@@ -284,14 +272,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Closed', contract });
     }
 
-    // ========== ADMIN ROUTES ==========
-
-    // Get real applications
+    // ========== ADMIN ROUTES (no auth) ==========
     if (path === '/api/admin/realname' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.realApplications });
     }
 
-    // Manual approve real
     if (path === '/api/admin/realname/approve' && method === 'POST') {
         const { applicationId } = body;
         const app = db.realApplications.find(a => a.id === applicationId);
@@ -300,17 +285,14 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Approved' });
     }
 
-    // Get all contracts
     if (path === '/api/admin/contracts' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.contracts });
     }
 
-    // Auth list
     if (path === '/api/admin/auth/list' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.authorizedNames });
     }
 
-    // Auth add
     if (path === '/api/admin/auth/add' && method === 'POST') {
         const { name } = body;
         if (!name) return sendJson(res, { code: 400, message: 'Name required' });
@@ -321,7 +303,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Authorized', data: db.authorizedNames });
     }
 
-    // Auth remove
     if (path === '/api/admin/auth/remove' && method === 'POST') {
         const { name } = body;
         db.authorizedNames = db.authorizedNames.filter(n => n !== name);
@@ -329,7 +310,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Removed', data: db.authorizedNames });
     }
 
-    // Get users
     if (path === '/api/admin/users' && method === 'GET') {
         return sendJson(res, { code: 200, data: db.users.map(u => ({
             openid: u.openid,
@@ -340,7 +320,6 @@ const server = http.createServer(async (req, res) => {
         }))});
     }
 
-    // Delete user
     if (path === '/api/admin/user/delete' && method === 'POST') {
         const { openid } = body;
         db.users = db.users.filter(u => u.openid !== openid);
@@ -354,7 +333,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Deleted' });
     }
 
-    // Black account
     if (path === '/api/admin/black/account' && method === 'POST') {
         const { openid } = body;
         if (!db.blackAccounts.includes(openid)) {
@@ -364,7 +342,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Blacklisted' });
     }
 
-    // Unblack account
     if (path === '/api/admin/black/unaccount' && method === 'POST') {
         const { openid } = body;
         db.blackAccounts = db.blackAccounts.filter(a => a !== openid);
@@ -372,7 +349,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Unblacklisted' });
     }
 
-    // Black IP
     if (path === '/api/admin/black/ip' && method === 'POST') {
         const { ip } = body;
         if (!db.blackIps.includes(ip)) {
@@ -382,7 +358,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'IP blocked' });
     }
 
-    // Unblack IP
     if (path === '/api/admin/black/unip' && method === 'POST') {
         const { ip } = body;
         db.blackIps = db.blackIps.filter(i => i !== ip);
