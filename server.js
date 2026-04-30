@@ -67,12 +67,27 @@ const server = http.createServer(async (req, res) => {
 
     // ========== 用户接口 ==========
     if (path === '/api/loan/realname' && req.method === 'POST') {
-        const { realName, idCard } = body;
+        const { realName, idCard, frontImg, backImg } = body;
         if (!realName || !idCard) return sendJson(res, { code: 400, message: '缺少信息' });
+        
+        // 更新当前用户信息
         currentUser.realName = realName;
         currentUser.idCard = idCard;
         currentUser.realStatus = 'verified';
         currentUser.realTime = new Date().toLocaleString('zh-CN');
+        
+        // 存入后台实名审核列表
+        db.realApplications.push({
+            id: Date.now(),
+            openid: currentUser.openid,
+            realName,
+            idCard,
+            frontImg: frontImg || '',
+            backImg: backImg || '',
+            status: 'approved',
+            time: new Date().toLocaleString('zh-CN')
+        });
+        
         saveDb(db);
         return sendJson(res, { code: 200, user: currentUser });
     }
@@ -86,7 +101,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ========== 合同接口 ==========
-    // 合同列表：测试阶段返回所有合同
     if (path === '/api/loan/contract/list' && req.method === 'GET') {
         return sendJson(res, { code: 200, data: db.contracts });
     }
