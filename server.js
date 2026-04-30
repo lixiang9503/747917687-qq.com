@@ -169,7 +169,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ========== 合同接口 ==========
-  // 合同列表：只返回当前用户的合同
   if (path === '/api/loan/contract/list' && req.method === 'GET') {
     if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     const contracts = (await pool.query(
@@ -179,7 +178,6 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, data: contracts });
   }
 
-  // 合同详情：任何登录用户都可以查看
   if (path === '/api/loan/contract/detail' && req.method === 'GET') {
     const id = parseInt(url.searchParams.get('id'));
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
@@ -188,7 +186,6 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid });
   }
 
-  // 创建合同
   if (path === '/api/loan/contract/create' && req.method === 'POST') {
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
     const authorized = (await pool.query(
@@ -221,7 +218,6 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, contract });
   }
 
-  // 签署合同
   if (path === '/api/loan/contract/sign' && req.method === 'POST') {
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 });
     const { contractId, borrowerSignature } = post;
@@ -232,31 +228,63 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, message: 'Signed' });
   }
 
-  // 延期合同
+  // 延期合同（后台管理员也可以调用，需要在 admin.html 中直接调用接口，所以这里需要放开 lender 限制，改为只要传了 contractId 就允许）
   if (path === '/api/loan/contract/extend' && req.method === 'POST') {
     const { contractId, newEndDate, reason } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
-    if (!contract || contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
+    if (!contract) return sendJson(res, { code: 404 });
+    // 如果是后台调用（没有 currentUser），直接放行；否则检查是不是出借人
+    if (currentUser) {
+      if (contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
+    }
     await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)',
       [contractId, newEndDate, reason || '手动延期', beijingTime()]);
     await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]);
     return sendJson(res, { code: 200, message: 'Extended' });
   }
 
-  // 结清合同
+  // 结清合同（同理，放开后台操作）
   if (path === '/api/loan/contract/close' && req.method === 'POST') {
     const { contractId } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
-    if (!contract || contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
+    if (!contract) return sendJson(res, { code: 404 });
+    if (currentUser) {
+      if (contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
+    }
     await pool.query('UPDATE contracts SET status=$1 WHERE id=$2', ['closed', contractId]);
     return sendJson(res, { code: 200, message: 'Closed' });
   }
 
   // ========== 后台管理接口 ==========
+  // 实名审核列表：分页 + 不返回完整 base64
   if (path === '/api/admin/realname' && req.method === 'GET') {
-    const data = (await pool.query('SELECT * FROM real_applications ORDER BY id DESC')).rows;
-    return sendJson(res, { code: 200, data });
+    const page = parseInt(url.searchParams.get('page')) || 1;
+    const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
+    const offset = (page - 1) * pageSize;
+    const countResult = await pool.query('SELECT COUNT(*) FROM real_applications');
+    const total = parseInt(countResult.rows[0].count);
+    const rows = (await pool.query(
+      'SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2',
+      [pageSize, offset]
+    )).rows;
+    const data = rows.map(r => ({
+      ...r,
+      hasFront: !!(r.frontimg && r.frontimg.length > 0),
+      hasBack: !!(r.backimg && r.backimg.length > 0),
+      frontimg: '',
+      backimg: ''
+    }));
+    return sendJson(res, { code: 200, data, page, pageSize, total });
   }
+
+  // 新增：根据 ID 获取完整身份证图片
+  if (path === '/api/admin/realname/images' && req.method === 'GET') {
+    const id = parseInt(url.searchParams.get('id'));
+    const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
+    if (!row) return sendJson(res, { code: 404, message: 'Not found' });
+    return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } });
+  }
+
   if (path === '/api/admin/contracts' && req.method === 'GET') {
     const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows;
     return sendJson(res, { code: 200, data });
