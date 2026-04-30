@@ -5,15 +5,18 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = 'xinyueqian_jwt_secret_2026';
 const PORT = process.env.PORT || 10000;
 
+// 北京时间转换函数
 function beijingTime() {
   return new Date(Date.now() + 8 * 60 * 60 * 1000).toLocaleString('zh-CN');
 }
 
+// PostgreSQL 数据库连接
 const pool = new Pool({
   connectionString: 'postgresql://db_747917687_user:B5FdlA82EdRVvkYrNw21qKsWTDJMOMnS@dpg-d7pgjif7f7vs739jp71g-a/db_747917687',
   ssl: { rejectUnauthorized: false }
 });
 
+// 初始化数据库表
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -78,6 +81,7 @@ async function initDB() {
 }
 initDB();
 
+// JWT 签名与验证
 function signToken(payload) { return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' }); }
 function verifyToken(token) { try { return jwt.verify(token, JWT_SECRET); } catch (e) { return null; } }
 function sendJson(res, data, code = 200) {
@@ -98,6 +102,7 @@ const server = http.createServer(async (req, res) => {
   let post = {};
   try { post = body ? JSON.parse(body) : {}; } catch (e) {}
 
+  // IP 黑名单检查
   const blackIps = (await pool.query('SELECT ip FROM black_ips')).rows.map(r => r.ip);
   const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection.remoteAddress || '';
   if (blackIps.includes(clientIp)) return sendJson(res, { code: 403, message: 'IP blocked' }, 403);
@@ -119,7 +124,7 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-  // ========== 鉴权（后台跳过） ==========
+  // ========== 鉴权（后台接口跳过） ==========
   let currentUser = null;
   if (!path.startsWith('/api/admin/')) {
     const auth = req.headers['authorization'];
@@ -164,11 +169,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ========== 合同接口 ==========
+  // 合同列表：只返回当前用户的合同
   if (path === '/api/loan/contract/list' && req.method === 'GET') {
-    const contracts = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows;
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+    const contracts = (await pool.query(
+      'SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC',
+      [currentUser.openid]
+    )).rows;
     return sendJson(res, { code: 200, data: contracts });
   }
 
+  // 合同详情：任何登录用户都可以查看
   if (path === '/api/loan/contract/detail' && req.method === 'GET') {
     const id = parseInt(url.searchParams.get('id'));
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
@@ -177,6 +188,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid });
   }
 
+  // 创建合同
   if (path === '/api/loan/contract/create' && req.method === 'POST') {
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
     const authorized = (await pool.query(
@@ -209,6 +221,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, contract });
   }
 
+  // 签署合同
   if (path === '/api/loan/contract/sign' && req.method === 'POST') {
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 });
     const { contractId, borrowerSignature } = post;
@@ -219,6 +232,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, message: 'Signed' });
   }
 
+  // 延期合同
   if (path === '/api/loan/contract/extend' && req.method === 'POST') {
     const { contractId, newEndDate, reason } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
@@ -229,6 +243,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, message: 'Extended' });
   }
 
+  // 结清合同
   if (path === '/api/loan/contract/close' && req.method === 'POST') {
     const { contractId } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
@@ -237,7 +252,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, message: 'Closed' });
   }
 
-  // ========== 后台管理 ==========
+  // ========== 后台管理接口 ==========
   if (path === '/api/admin/realname' && req.method === 'GET') {
     const data = (await pool.query('SELECT * FROM real_applications ORDER BY id DESC')).rows;
     return sendJson(res, { code: 200, data });
