@@ -17,6 +17,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .main{margin-left:220px;flex:1;padding:24px}
 .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .card h2{font-size:18px;margin-bottom:16px;color:#1a1a2e}
+.search-row{display:flex;gap:10px;margin-bottom:16px;align-items:center}
+.search-input{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;width:250px}
+.search-btn{padding:8px 16px;border:none;border-radius:8px;background:#4361ee;color:#fff;font-size:13px;cursor:pointer}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #f0f2f5;font-size:13px}
 th{color:#666;font-weight:600;font-size:12px}
@@ -32,18 +35,16 @@ th{color:#666;font-weight:600;font-size:12px}
 .badge-warning{background:#fef3c7;color:#92400e}
 .badge-danger{background:#fee2e2;color:#991b1b}
 .badge-info{background:#dbeafe;color:#1e40af}
-.badge-gray{background:#e5e7eb;color:#374151}
 .input-field{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;width:200px;margin-right:8px}
-.input-field:focus{outline:none;border-color:#4361ee}
 .row{display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
 .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center}
 .modal.active{display:flex}
-.modal-content{background:#fff;border-radius:16px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto}
-.modal h3{margin-bottom:16px}
+.modal-content{background:#fff;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto}
 .close-btn{float:right;background:none;border:none;font-size:20px;cursor:pointer}
 .toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;display:none}
 .toast-success{background:#10b981}
 .toast-error{background:#ef4444}
+.id-card-img{max-width:200px;max-height:150px;margin:4px;border-radius:8px;border:1px solid #e5e7eb}
 </style>
 </head>
 <body>
@@ -59,7 +60,6 @@ th{color:#666;font-weight:600;font-size:12px}
 </div>
 
 <div class="main" id="mainContent"></div>
-
 <div class="modal" id="modal"><div class="modal-content" id="modalContent"></div></div>
 <div id="toast" class="toast"></div>
 
@@ -67,40 +67,36 @@ th{color:#666;font-weight:600;font-size:12px}
 const API = 'https://seven47917687-qq-com.onrender.com';
 let currentPage = 'realname';
 
-document.querySelectorAll('.nav-item').forEach(function(item) {
+document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', function() {
-    document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
-    item.classList.add('active');
-    currentPage = item.dataset.page;
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    this.classList.add('active');
+    currentPage = this.dataset.page;
     renderPage();
   });
 });
 
 function showToast(msg, type) {
   type = type || 'success';
-  var t = document.getElementById('toast');
+  const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast toast-' + type;
   t.style.display = 'block';
-  setTimeout(function() { t.style.display = 'none'; }, 2500);
+  setTimeout(() => t.style.display = 'none', 2500);
 }
 
 function openModal(title, html) {
   document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>' + title + '</h3>' + html;
   document.getElementById('modal').classList.add('active');
 }
-
-function closeModal() {
-  document.getElementById('modal').classList.remove('active');
-}
+function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
 async function api(path) {
-  var res = await fetch(API + path);
+  const res = await fetch(API + path);
   return await res.json();
 }
-
 async function apiPost(path, body) {
-  var res = await fetch(API + path, {
+  const res = await fetch(API + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -109,7 +105,7 @@ async function apiPost(path, body) {
 }
 
 async function renderPage() {
-  var main = document.getElementById('mainContent');
+  const main = document.getElementById('mainContent');
   if (currentPage === 'realname') await renderRealname(main);
   else if (currentPage === 'contracts') await renderContracts(main);
   else if (currentPage === 'auth') await renderAuth(main);
@@ -118,168 +114,166 @@ async function renderPage() {
 
 // ========== 实名审核 ==========
 async function renderRealname(main) {
-  var data = await api('/api/admin/realname');
-  var list = data.data || [];
-  var html = '<div class="card"><h2>实名审核 (共' + list.length + '条)</h2><table><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>时间</th><th>操作</th></tr>';
-  list.forEach(function(r) {
-    html += '<tr><td>' + r.id + '</td><td>' + r.realName + '</td><td>' + r.idCard + '</td>';
-    html += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
-    html += '<td>' + r.time + '</td><td>';
-    html += r.status !== 'approved' ? '<button class="btn btn-primary btn-sm" onclick="approveReal(' + r.id + ')">手动通过</button>' : '-';
-    html += '</td></tr>';
-  });
-  html += '</table></div>';
+  const data = await api('/api/admin/realname');
+  const allList = data.data || [];
+  let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
+  html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
+  html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th></tr></table></div>';
   main.innerHTML = html;
+  window.realnameData = allList;
+  renderRealnameTable(allList);
 }
 
-async function approveReal(id) {
-  var res = await apiPost('/api/admin/realname/approve', { applicationId: id });
-  showToast(res.code === 200 ? '已通过' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
+function searchRealname() {
+  const keyword = document.getElementById('realnameSearch').value.trim().toLowerCase();
+  const filtered = window.realnameData.filter(r => 
+    (r.realname || '').toLowerCase().includes(keyword) || (r.idcard || '').includes(keyword)
+  );
+  renderRealnameTable(filtered);
+}
+
+function renderRealnameTable(list) {
+  let rows = '';
+  list.forEach(r => {
+    rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>';
+    rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
+    rows += '<td>' + (r.time || '-') + '</td>';
+    rows += '<td><button class="btn btn-secondary btn-sm" onclick="viewIdCard(\'' + (r.frontimg || '') + '\',\'' + (r.backimg || '') + '\')">查看证件</button></td></tr>';
+  });
+  document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th></tr>' + rows;
+}
+
+function viewIdCard(front, back) {
+  let html = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  if (front && front !== '') {
+    html += '<div><p>身份证正面：</p><img src="' + front + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+  } else {
+    html += '<div><p>身份证正面：</p><p style="color:#999">未上传</p></div>';
+  }
+  if (back && back !== '') {
+    html += '<div><p>身份证反面：</p><img src="' + back + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+  } else {
+    html += '<div><p>身份证反面：</p><p style="color:#999">未上传</p></div>';
+  }
+  html += '</div>';
+  openModal('身份证件', html);
 }
 
 // ========== 合同管理 ==========
 async function renderContracts(main) {
-  var data = await api('/api/admin/contracts');
-  var list = data.data || [];
-  var html = '<div class="card"><h2>合同管理 (共' + list.length + '条)</h2><table><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>利率</th><th>借款日期</th><th>还款日期</th><th>状态</th><th>操作</th></tr>';
-  list.forEach(function(c) {
-    html += '<tr><td>' + c.id + '</td><td>' + c.lenderName + '</td><td>' + (c.borrowerName || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.rate + '%</td><td>' + c.startDate + '</td><td>' + c.endDate + '</td>';
-    html += '<td><span class="badge ' + getStatusBadge(c.status) + '">' + getStatusText(c.status) + '</span></td>';
-    html += '<td><button class="btn btn-secondary btn-sm" onclick="viewContract(' + c.id + ')">详情</button></td></tr>';
-  });
-  html += '</table></div>';
+  const data = await api('/api/admin/contracts');
+  const allList = data.data || [];
+  let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>';
+  html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>';
+  html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th></tr></table></div>';
   main.innerHTML = html;
+  window.contractData = allList;
+  renderContractTable(allList);
 }
 
-function getStatusBadge(s) {
-  if (s === 'pending') return 'badge-warning';
-  if (s === 'active') return 'badge-info';
-  if (s === 'overdue') return 'badge-danger';
-  if (s === 'closed') return 'badge-success';
-  return 'badge-gray';
-}
-
-function getStatusText(s) {
-  if (s === 'pending') return '待签';
-  if (s === 'active') return '使用中';
-  if (s === 'overdue') return '已逾期';
-  if (s === 'closed') return '已结清';
-  return s;
-}
-
-async function viewContract(id) {
-  var data = await api('/api/admin/contracts');
-  var c = (data.data || []).find(function(x) { return x.id === id; });
-  if (!c) return;
-  openModal('合同详情',
-    '<p><b>出借人：</b>' + c.lenderName + ' (' + c.lenderIdCard + ')</p>' +
-    '<p><b>借款人：</b>' + (c.borrowerName || '-') + ' (' + (c.borrowerIdCard || '-') + ')</p>' +
-    '<p><b>金额：</b>¥' + c.amount + '</p>' +
-    '<p><b>年利率：</b>' + c.rate + '%</p>' +
-    '<p><b>事由：</b>' + c.reason + '</p>' +
-    '<p><b>支付方式：</b>' + c.payMethod + '</p>' +
-    '<p><b>借款期间：</b>' + c.startDate + ' ~ ' + c.endDate + '</p>' +
-    '<p><b>状态：</b>' + getStatusText(c.status) + '</p>' +
-    '<p><b>创建时间：</b>' + c.createTime + '</p>' +
-    '<p><b>出借人签名：</b>' + (c.lenderSignature ? '已签' : '未签') + '</p>' +
-    '<p><b>借款人签名：</b>' + (c.borrowerSignature ? '已签' : '未签') + '</p>'
+function searchContracts() {
+  const keyword = document.getElementById('contractSearch').value.trim().toLowerCase();
+  const filtered = window.contractData.filter(c => 
+    (c.lendername || '').toLowerCase().includes(keyword) || (c.borrowername || '').toLowerCase().includes(keyword)
   );
+  renderContractTable(filtered);
+}
+
+function renderContractTable(list) {
+  let rows = '';
+  list.forEach(c => {
+    rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td></tr>';
+  });
+  document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th></tr>' + rows;
 }
 
 // ========== 授权管理 ==========
 async function renderAuth(main) {
-  var data = await api('/api/admin/auth/list');
-  var list = data.data || [];
-  var html = '<div class="card"><h2>授权管理</h2><div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="输入用户真实姓名"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div><table><tr><th>序号</th><th>姓名</th><th>操作</th></tr>';
-  list.forEach(function(name, i) {
-    html += '<tr><td>' + (i + 1) + '</td><td>' + name + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + name + '\')">取消授权</button></td></tr>';
+  const data = await api('/api/admin/auth/list');
+  const list = data.data || [];
+  let html = '<div class="card"><h2>授权管理</h2>';
+  html += '<div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="真实姓名"><input type="text" class="input-field" id="authIdCardInput" placeholder="身份证号"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div>';
+  html += '<table><tr><th>序号</th><th>姓名</th><th>身份证号</th><th>操作</th></tr>';
+  list.forEach((item, i) => {
+    html += '<tr><td>' + (i + 1) + '</td><td>' + item.realname + '</td><td>' + item.idcard + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + item.realname + '\',\'' + item.idcard + '\')">取消授权</button></td></tr>';
   });
   html += '</table></div>';
   main.innerHTML = html;
 }
 
 async function addAuth() {
-  var name = document.getElementById('authNameInput').value.trim();
-  if (!name) return showToast('请输入姓名', 'error');
-  var res = await apiPost('/api/admin/auth/add', { name: name });
-  showToast(res.code === 200 ? '授权成功' : '失败', res.code === 200 ? 'success' : 'error');
+  const realName = document.getElementById('authNameInput').value.trim();
+  const idCard = document.getElementById('authIdCardInput').value.trim();
+  if (!realName || !idCard) return showToast('请填写姓名和身份证号', 'error');
+  const res = await apiPost('/api/admin/auth/add', { realName, idCard });
+  showToast(res.code === 200 ? '授权成功' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
 
-async function removeAuth(name) {
-  var res = await apiPost('/api/admin/auth/remove', { name: name });
-  showToast(res.code === 200 ? '已取消授权' : '失败', res.code === 200 ? 'success' : 'error');
+async function removeAuth(realName, idCard) {
+  const res = await apiPost('/api/admin/auth/remove', { realName, idCard });
+  showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
 
 // ========== 账号管理 ==========
 async function renderAccounts(main) {
-  var data = await api('/api/admin/users');
-  var list = data.data || [];
-  var html = '<div class="card"><h2>账号管理 (共' + list.length + '条)</h2><table><tr><th>OpenID</th><th>真实姓名</th><th>实名状态</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr>';
-  list.forEach(function(u) {
-    html += '<tr><td>' + u.openid + '</td><td>' + (u.realName || '-') + '</td><td>' + (u.realStatus === 'verified' ? '已实名' : '未实名') + '</td><td>' + (u.authorized ? '已授权' : '未授权') + '</td><td>' + (u.blacked ? '已拉黑' : '正常') + '</td>';
-    html += '<td><button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除账号</button> ';
-    html += u.blacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + u.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + u.openid + '\')">拉黑账号</button>';
-    html += '</td></tr>';
-  });
-  html += '</table></div><div class="card"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div><div id="ipList"></div></div>';
+  const data = await api('/api/admin/users');
+  const allList = data.data || [];
+  let html = '<div class="card"><h2>账号管理 (共' + allList.length + '条)</h2>';
+  html += '<div class="search-row"><input class="search-input" id="accountSearch" placeholder="搜索姓名"><button class="search-btn" onclick="searchAccounts()">搜索</button></div>';
+  html += '<table id="accountTable"><tr><th>OpenID</th><th>姓名</th><th>实名状态</th><th>认证时间</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr></table></div>';
+  html += '<div class="card"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
   main.innerHTML = html;
-  renderIpList();
+  window.accountData = allList;
+  renderAccountTable(allList);
 }
 
-async function renderIpList() {
-  var container = document.getElementById('ipList');
-  if (!container) return;
-  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
-  container.innerHTML = ips.map(function(ip) {
-    return '<span style="display:inline-block;margin:4px;padding:6px 12px;background:#fee2e2;border-radius:8px;">' + ip + ' <button style="background:none;border:none;cursor:pointer;color:#ef4444;" onclick="unblackIp(\'' + ip + '\')">✕</button></span>';
-  }).join('');
+function searchAccounts() {
+  const keyword = document.getElementById('accountSearch').value.trim().toLowerCase();
+  const filtered = window.accountData.filter(u => 
+    (u.realName || '').toLowerCase().includes(keyword)
+  );
+  renderAccountTable(filtered);
 }
 
-async function blackAccount(openid) {
-  var res = await apiPost('/api/admin/black/account', { openid: openid });
-  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function unblackAccount(openid) {
-  var res = await apiPost('/api/admin/black/unaccount', { openid: openid });
-  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
+function renderAccountTable(list) {
+  let rows = '';
+  list.forEach(u => {
+    rows += '<tr><td>' + u.openid + '</td><td>' + (u.realName || '-') + '</td><td>' + (u.realStatus === 'verified' ? '已实名' : '未实名') + '</td>';
+    rows += '<td>' + (u.realTime || '-') + '</td>';
+    rows += '<td>' + (u.authorized ? '已授权' : '未授权') + '</td>';
+    rows += '<td>' + (u.blacked ? '已拉黑' : '正常') + '</td>';
+    rows += '<td><button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除</button> ';
+    rows += u.blacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + u.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + u.openid + '\')">拉黑账号</button>';
+    rows += '</td></tr>';
+  });
+  document.getElementById('accountTable').innerHTML = '<tr><th>OpenID</th><th>姓名</th><th>实名状态</th><th>认证时间</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr>' + rows;
 }
 
 async function deleteUser(openid) {
-  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
-  var res = await apiPost('/api/admin/user/delete', { openid: openid });
+  if (!confirm('确定删除该用户所有信息？')) return;
+  const res = await apiPost('/api/admin/user/delete', { openid });
   showToast(res.code === 200 ? '已删除' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
-
+async function blackAccount(openid) {
+  const res = await apiPost('/api/admin/black/account', { openid });
+  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+async function unblackAccount(openid) {
+  const res = await apiPost('/api/admin/black/unaccount', { openid });
+  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
 async function blackIp() {
-  var ip = document.getElementById('ipInput').value.trim();
+  const ip = document.getElementById('ipInput').value.trim();
   if (!ip) return showToast('请输入IP', 'error');
-  var res = await apiPost('/api/admin/black/ip', { ip: ip });
-  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
-  if (res.code === 200 && ips.indexOf(ip) === -1) {
-    ips.push(ip);
-    localStorage.setItem('blackIps', JSON.stringify(ips));
-  }
+  const res = await apiPost('/api/admin/black/ip', { ip });
   showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
-  renderIpList();
 }
 
-async function unblackIp(ip) {
-  var res = await apiPost('/api/admin/black/unip', { ip: ip });
-  var ips = JSON.parse(localStorage.getItem('blackIps') || '[]');
-  ips = ips.filter(function(i) { return i !== ip; });
-  localStorage.setItem('blackIps', JSON.stringify(ips));
-  showToast(res.code === 200 ? 'IP已解除' : '失败', res.code === 200 ? 'success' : 'error');
-  renderIpList();
-}
-
-// 初始化
 renderPage();
 </script>
 </body>
