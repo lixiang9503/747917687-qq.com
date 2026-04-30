@@ -91,7 +91,7 @@ function openModal(title, html) {
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
-async function api(path) {
+async function apiGet(path) {
   const res = await fetch(API + path);
   return await res.json();
 }
@@ -114,7 +114,7 @@ async function renderPage() {
 
 // ========== 实名审核 ==========
 async function renderRealname(main) {
-  const data = await api('/api/admin/realname');
+  const data = await apiGet('/api/admin/realname');
   const allList = data.data || [];
   let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
@@ -161,7 +161,7 @@ function viewIdCard(front, back) {
 
 // ========== 合同管理 ==========
 async function renderContracts(main) {
-  const data = await api('/api/admin/contracts');
+  const data = await apiGet('/api/admin/contracts');
   const allList = data.data || [];
   let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>';
@@ -189,7 +189,7 @@ function renderContractTable(list) {
 
 // ========== 授权管理 ==========
 async function renderAuth(main) {
-  const data = await api('/api/admin/auth/list');
+  const data = await apiGet('/api/admin/auth/list');
   const list = data.data || [];
   let html = '<div class="card"><h2>授权管理</h2>';
   html += '<div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="真实姓名"><input type="text" class="input-field" id="authIdCardInput" placeholder="身份证号"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div>';
@@ -218,7 +218,7 @@ async function removeAuth(realName, idCard) {
 
 // ========== 账号管理 ==========
 async function renderAccounts(main) {
-  const data = await api('/api/admin/users');
+  const data = await apiGet('/api/admin/users');
   const allList = data.data || [];
   let html = '<div class="card"><h2>账号管理 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="accountSearch" placeholder="搜索姓名"><button class="search-btn" onclick="searchAccounts()">搜索</button></div>';
@@ -244,7 +244,8 @@ function renderAccountTable(list) {
     rows += '<td>' + (u.realTime || '-') + '</td>';
     rows += '<td>' + (u.authorized ? '已授权' : '未授权') + '</td>';
     rows += '<td>' + (u.blacked ? '已拉黑' : '正常') + '</td>';
-    rows += '<td><button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除</button> ';
+    rows += '<td>';
+    rows += '<button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除</button> ';
     rows += u.blacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + u.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + u.openid + '\')">拉黑账号</button>';
     rows += '</td></tr>';
   });
@@ -252,21 +253,24 @@ function renderAccountTable(list) {
 }
 
 async function deleteUser(openid) {
-  if (!confirm('确定删除该用户所有信息？')) return;
+  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
   const res = await apiPost('/api/admin/user/delete', { openid });
-  showToast(res.code === 200 ? '已删除' : '失败', res.code === 200 ? 'success' : 'error');
+  showToast(res.code === 200 ? '已删除' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
+
 async function blackAccount(openid) {
   const res = await apiPost('/api/admin/black/account', { openid });
   showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
+
 async function unblackAccount(openid) {
   const res = await apiPost('/api/admin/black/unaccount', { openid });
   showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
+
 async function blackIp() {
   const ip = document.getElementById('ipInput').value.trim();
   if (!ip) return showToast('请输入IP', 'error');
