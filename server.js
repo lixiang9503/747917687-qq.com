@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = 'xinyueqian_jwt_secret_2026';
 const PORT = process.env.PORT || 10000;
 
-// 将 UTC 时间转换为北京时间
 function beijingTime() {
   return new Date(Date.now() + 8 * 60 * 60 * 1000).toLocaleString('zh-CN');
 }
@@ -282,10 +281,12 @@ const server = http.createServer(async (req, res) => {
   }
   if (path === '/api/admin/user/delete' && req.method === 'POST') {
     const { openid } = post;
-    await pool.query('DELETE FROM users WHERE openid=$1', [openid]);
     await pool.query('DELETE FROM real_applications WHERE openid=$1', [openid]);
     await pool.query('DELETE FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1', [openid]);
-    return sendJson(res, { code: 200 });
+    await pool.query('DELETE FROM authorized_users WHERE realName=(SELECT realName FROM users WHERE openid=$1) AND idCard=(SELECT idCard FROM users WHERE openid=$1)', [openid]);
+    await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]);
+    await pool.query('DELETE FROM users WHERE openid=$1', [openid]);
+    return sendJson(res, { code: 200, message: '删除成功' });
   }
   if (path === '/api/admin/black/account' && req.method === 'POST') {
     const { openid } = post;
