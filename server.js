@@ -128,17 +128,32 @@ const server = http.createServer(async (req, res) => {
   let currentUser = null;
   if (!path.startsWith('/api/admin/')) {
     const auth = req.headers['authorization'];
-    if (!auth || !auth.startsWith('Bearer ')) return sendJson(res, { code: 401 }, 401);
-    const decoded = verifyToken(auth.split(' ')[1]);
-    if (!decoded) return sendJson(res, { code: 401 }, 401);
-    currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [decoded.openid])).rows[0];
-    if (!currentUser) return sendJson(res, { code: 404 }, 404);
-    const blacked = (await pool.query('SELECT openid FROM black_accounts WHERE openid=$1', [currentUser.openid])).rows[0];
-    if (blacked) return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
+    if (auth && auth.startsWith('Bearer ')) {
+      const token = auth.split(' ')[1];
+      const decoded = verifyToken(token);
+      if (decoded) {
+        currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [decoded.openid])).rows[0];
+        if (currentUser) {
+          const blacked = (await pool.query('SELECT openid FROM black_accounts WHERE openid=$1', [currentUser.openid])).rows[0];
+          if (blacked) return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
+        }
+      }
+    }
+    // 注意：小程序端的接口需要强制登录，这里单独处理
+    if (!currentUser && !path.startsWith('/api/admin/')) {
+      // 但是延期和结清接口允许后台无Token调用，所以不在中间件拦截
+      if (path !== '/api/loan/contract/extend' && path !== '/api/loan/contract/close') {
+        // 其他接口如果没登录就返回401
+        if (path.startsWith('/api/loan/') && path !== '/api/loan/login' && path !== '/ping') {
+          return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
+        }
+      }
+    }
   }
 
   // ========== 用户接口 ==========
   if (path === '/api/loan/realname' && req.method === 'POST') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     const { realName, idCard, frontImg, backImg } = post;
     if (!realName || !idCard) return sendJson(res, { code: 400 });
 
@@ -157,10 +172,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === '/api/loan/user/info' && req.method === 'GET') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     return sendJson(res, { code: 200, user: currentUser });
   }
 
   if (path === '/api/loan/checkAuth' && req.method === 'GET') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     const authorized = (await pool.query(
       'SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2',
       [currentUser.realname, currentUser.idcard]
@@ -179,6 +196,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === '/api/loan/contract/detail' && req.method === 'GET') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     const id = parseInt(url.searchParams.get('id'));
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
     if (!contract) return sendJson(res, { code: 404 });
@@ -187,6 +205,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === '/api/loan/contract/create' && req.method === 'POST') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
     const authorized = (await pool.query(
       'SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2',
@@ -219,6 +238,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === '/api/loan/contract/sign' && req.method === 'POST') {
+    if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
     if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 });
     const { contractId, borrowerSignature } = post;
     await pool.query(
@@ -228,35 +248,32 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { code: 200, message: 'Signed' });
   }
 
-  // 延期合同（后台管理员也可以调用，需要在 admin.html 中直接调用接口，所以这里需要放开 lender 限制，改为只要传了 contractId 就允许）
+  // 延期合同：后台操作放行
   if (path === '/api/loan/contract/extend' && req.method === 'POST') {
     const { contractId, newEndDate, reason } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
     if (!contract) return sendJson(res, { code: 404 });
-    // 如果是后台调用（没有 currentUser），直接放行；否则检查是不是出借人
-    if (currentUser) {
-      if (contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
-    }
+    // 如果有当前用户，校验是不是出借人；否则是后台操作，直接放行
+    if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
     await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)',
       [contractId, newEndDate, reason || '手动延期', beijingTime()]);
     await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]);
     return sendJson(res, { code: 200, message: 'Extended' });
   }
 
-  // 结清合同（同理，放开后台操作）
+  // 结清合同：后台操作放行
   if (path === '/api/loan/contract/close' && req.method === 'POST') {
     const { contractId } = post;
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
     if (!contract) return sendJson(res, { code: 404 });
-    if (currentUser) {
-      if (contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
-    }
+    // 如果有当前用户，校验是不是出借人；否则是后台操作，直接放行
+    if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
     await pool.query('UPDATE contracts SET status=$1 WHERE id=$2', ['closed', contractId]);
     return sendJson(res, { code: 200, message: 'Closed' });
   }
 
   // ========== 后台管理接口 ==========
-  // 实名审核列表：分页 + 不返回完整 base64
+  // 实名审核：列表不含大图
   if (path === '/api/admin/realname' && req.method === 'GET') {
     const page = parseInt(url.searchParams.get('page')) || 1;
     const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
@@ -264,20 +281,13 @@ const server = http.createServer(async (req, res) => {
     const countResult = await pool.query('SELECT COUNT(*) FROM real_applications');
     const total = parseInt(countResult.rows[0].count);
     const rows = (await pool.query(
-      'SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2',
+      'SELECT id, openid, realName, idCard, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2',
       [pageSize, offset]
     )).rows;
-    const data = rows.map(r => ({
-      ...r,
-      hasFront: !!(r.frontimg && r.frontimg.length > 0),
-      hasBack: !!(r.backimg && r.backimg.length > 0),
-      frontimg: '',
-      backimg: ''
-    }));
-    return sendJson(res, { code: 200, data, page, pageSize, total });
+    return sendJson(res, { code: 200, data: rows, page, pageSize, total });
   }
 
-  // 新增：根据 ID 获取完整身份证图片
+  // 根据 ID 获取身份证原始图片
   if (path === '/api/admin/realname/images' && req.method === 'GET') {
     const id = parseInt(url.searchParams.get('id'));
     const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
