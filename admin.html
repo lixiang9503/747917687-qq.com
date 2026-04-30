@@ -148,17 +148,33 @@ async function loadAndViewIdCard(id) {
   const res = await fetch(API + '/api/admin/realname/images?id=' + id).then(r => r.json());
   if (res.code === 200) {
     const d = res.data;
-    let html = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
-    if (d.frontImg && d.frontImg.length > 0) {
-      html += '<div><p>身份证正面：</p><img src="' + d.frontImg + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+    const frontUrl = d.frontImg ? API + d.frontImg : '';
+    const backUrl = d.backImg ? API + d.backImg : '';
+    
+    let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+    
+    // 身份证正面
+    html += '<div style="text-align:center">';
+    html += '<p style="margin-bottom:6px;font-weight:600">身份证正面</p>';
+    if (frontUrl) {
+      html += '<img src="' + frontUrl + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + frontUrl + '\', \'_blank\')" title="点击查看原图">';
+      html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
-      html += '<div><p>身份证正面：</p><p style="color:#999">未上传</p></div>';
+      html += '<p style="color:#999">未上传</p>';
     }
-    if (d.backImg && d.backImg.length > 0) {
-      html += '<div><p>身份证反面：</p><img src="' + d.backImg + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+    html += '</div>';
+    
+    // 身份证反面
+    html += '<div style="text-align:center">';
+    html += '<p style="margin-bottom:6px;font-weight:600">身份证反面</p>';
+    if (backUrl) {
+      html += '<img src="' + backUrl + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + backUrl + '\', \'_blank\')" title="点击查看原图">';
+      html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
-      html += '<div><p>身份证反面：</p><p style="color:#999">未上传</p></div>';
+      html += '<p style="color:#999">未上传</p>';
     }
+    html += '</div>';
+    
     html += '</div>';
     document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>身份证件</h3>' + html;
   }
