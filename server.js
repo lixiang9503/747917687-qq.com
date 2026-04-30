@@ -5,6 +5,11 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = 'xinyueqian_jwt_secret_2026';
 const PORT = process.env.PORT || 10000;
 
+// 将 UTC 时间转换为北京时间
+function beijingTime() {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toLocaleString('zh-CN');
+}
+
 const pool = new Pool({
   connectionString: 'postgresql://db_747917687_user:B5FdlA82EdRVvkYrNw21qKsWTDJMOMnS@dpg-d7pgjif7f7vs739jp71g-a/db_747917687',
   ssl: { rejectUnauthorized: false }
@@ -106,7 +111,7 @@ const server = http.createServer(async (req, res) => {
     if (blacked) return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
     let user = (await pool.query('SELECT * FROM users WHERE openid=$1', [openid])).rows[0];
     if (!user) {
-      await pool.query('INSERT INTO users(openid, createTime) VALUES($1, $2)', [openid, new Date().toISOString()]);
+      await pool.query('INSERT INTO users(openid, createTime) VALUES($1, $2)', [openid, beijingTime()]);
       user = (await pool.query('SELECT * FROM users WHERE openid=$1', [openid])).rows[0];
     }
     const token = signToken({ openid: user.openid });
@@ -135,12 +140,12 @@ const server = http.createServer(async (req, res) => {
 
     await pool.query(
       'UPDATE users SET realName=$1, idCard=$2, realStatus=$3, realTime=$4 WHERE openid=$5',
-      [realName, idCard, 'verified', new Date().toLocaleString('zh-CN'), currentUser.openid]
+      [realName, idCard, 'verified', beijingTime(), currentUser.openid]
     );
 
     await pool.query(
       'INSERT INTO real_applications(id, openid, realName, idCard, frontImg, backImg, status, time) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
-      [Date.now(), currentUser.openid, realName, idCard, frontImg || '', backImg || '', 'approved', new Date().toLocaleString('zh-CN')]
+      [Date.now(), currentUser.openid, realName, idCard, frontImg || '', backImg || '', 'approved', beijingTime()]
     );
 
     currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [currentUser.openid])).rows[0];
@@ -196,7 +201,7 @@ const server = http.createServer(async (req, res) => {
       enddate: endDate,
       lendersignature: lenderSignature || '',
       status: 'pending',
-      createtime: new Date().toLocaleString('zh-CN')
+      createtime: beijingTime()
     };
     await pool.query(
       'INSERT INTO contracts(id,lenderopenid,lendername,lenderidcard,amount,amountchinese,rate,reason,paymethod,startdate,enddate,lendersignature,status,createtime) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
@@ -220,7 +225,7 @@ const server = http.createServer(async (req, res) => {
     const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
     if (!contract || contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
     await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)',
-      [contractId, newEndDate, reason || '手动延期', new Date().toLocaleString('zh-CN')]);
+      [contractId, newEndDate, reason || '手动延期', beijingTime()]);
     await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]);
     return sendJson(res, { code: 200, message: 'Extended' });
   }
