@@ -138,25 +138,30 @@ function renderRealnameTable(list) {
     rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>';
     rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
     rows += '<td>' + (r.time || '-') + '</td>';
-    rows += '<td><button class="btn btn-secondary btn-sm" onclick="viewIdCard(\'' + (r.frontimg || '') + '\',\'' + (r.backimg || '') + '\')">查看证件</button></td></tr>';
+    rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td></tr>';
   });
   document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th></tr>' + rows;
 }
 
-function viewIdCard(front, back) {
-  let html = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
-  if (front && front !== '') {
-    html += '<div><p>身份证正面：</p><img src="' + front + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
-  } else {
-    html += '<div><p>身份证正面：</p><p style="color:#999">未上传</p></div>';
+async function loadAndViewIdCard(id) {
+  openModal('身份证件', '<p style="text-align:center;color:#94a3b8">加载中...</p>');
+  const res = await fetch(API + '/api/admin/realname/images?id=' + id).then(r => r.json());
+  if (res.code === 200) {
+    const d = res.data;
+    let html = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+    if (d.frontImg && d.frontImg.length > 0) {
+      html += '<div><p>身份证正面：</p><img src="' + d.frontImg + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+    } else {
+      html += '<div><p>身份证正面：</p><p style="color:#999">未上传</p></div>';
+    }
+    if (d.backImg && d.backImg.length > 0) {
+      html += '<div><p>身份证反面：</p><img src="' + d.backImg + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
+    } else {
+      html += '<div><p>身份证反面：</p><p style="color:#999">未上传</p></div>';
+    }
+    html += '</div>';
+    document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>身份证件</h3>' + html;
   }
-  if (back && back !== '') {
-    html += '<div><p>身份证反面：</p><img src="' + back + '" class="id-card-img" onerror="this.style.display=\'none\'"></div>';
-  } else {
-    html += '<div><p>身份证反面：</p><p style="color:#999">未上传</p></div>';
-  }
-  html += '</div>';
-  openModal('身份证件', html);
 }
 
 // ========== 合同管理 ==========
@@ -260,12 +265,14 @@ async function deleteUser(openid) {
 }
 
 async function blackAccount(openid) {
+  if (!confirm('确定拉黑该账号吗？拉黑后将无法登录。')) return;
   const res = await apiPost('/api/admin/black/account', { openid });
   showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
 
 async function unblackAccount(openid) {
+  if (!confirm('确定解除拉黑吗？')) return;
   const res = await apiPost('/api/admin/black/unaccount', { openid });
   showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
@@ -274,6 +281,7 @@ async function unblackAccount(openid) {
 async function blackIp() {
   const ip = document.getElementById('ipInput').value.trim();
   if (!ip) return showToast('请输入IP', 'error');
+  if (!confirm('确定拉黑该IP吗？')) return;
   const res = await apiPost('/api/admin/black/ip', { ip });
   showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
 }
