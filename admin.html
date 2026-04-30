@@ -170,7 +170,7 @@ async function renderContracts(main) {
   const allList = data.data || [];
   let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>';
-  html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th></tr></table></div>';
+  html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr></table></div>';
   main.innerHTML = html;
   window.contractData = allList;
   renderContractTable(allList);
@@ -187,9 +187,41 @@ function searchContracts() {
 function renderContractTable(list) {
   let rows = '';
   list.forEach(c => {
-    rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td></tr>';
+    rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td>';
+    rows += '<td>';
+    if (c.status === 'active') {
+      rows += '<button class="btn btn-warning btn-sm" onclick="adminExtend(' + c.id + ')">延期</button> ';
+      rows += '<button class="btn btn-success btn-sm" onclick="adminClose(' + c.id + ')">结清</button>';
+    } else {
+      rows += '-';
+    }
+    rows += '</td></tr>';
   });
-  document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th></tr>' + rows;
+  document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr>' + rows;
+}
+
+async function adminExtend(contractId) {
+  const newEndDate = prompt('请输入新的截止日期（格式：2026-06-15）：');
+  if (!newEndDate) return;
+  const reason = prompt('请输入延期原因（选填）：') || '后台手动延期';
+  const res = await apiPost('/api/loan/contract/extend', { contractId, newEndDate, reason });
+  if (res.code === 200) {
+    showToast('延期成功');
+    renderPage();
+  } else {
+    showToast('延期失败: ' + (res.message || ''), 'error');
+  }
+}
+
+async function adminClose(contractId) {
+  if (!confirm('确定结清此合同吗？')) return;
+  const res = await apiPost('/api/loan/contract/close', { contractId });
+  if (res.code === 200) {
+    showToast('已结清');
+    renderPage();
+  } else {
+    showToast('结清失败: ' + (res.message || ''), 'error');
+  }
 }
 
 // ========== 授权管理 ==========
