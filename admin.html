@@ -44,8 +44,8 @@ th{color:#666;font-weight:600;font-size:12px}
 .toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;display:none}
 .toast-success{background:#10b981}
 .toast-error{background:#ef4444}
-.id-card-img{max-width:200px;max-height:150px;margin:4px;border-radius:8px;border:1px solid #e5e7eb}
-.action-separator{display:inline-block;width:1px;height:20px;background:#d1d5db;margin:0 8px;vertical-align:middle}
+.id-card-img{max-width:200px;max-height:150px;margin:4px;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer}
+.full-img{width:100%;max-height:70vh;object-fit:contain;border-radius:8px}
 </style>
 </head>
 <body>
@@ -113,11 +113,9 @@ async function renderPage() {
 
 // ========== 实名审核 ==========
 async function renderRealname(main) {
-  // 获取实名记录
   const data = await apiGet('/api/admin/realname');
   const allList = data.data || [];
   
-  // 获取拉黑列表
   let blackList = [];
   try {
     const usersRes = await apiGet('/api/admin/users');
@@ -128,8 +126,6 @@ async function renderRealname(main) {
   let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
   html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr></table></div>';
-  
-  // 拉黑IP管理放在实名审核底部
   html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
   
   main.innerHTML = html;
@@ -172,27 +168,24 @@ async function loadAndViewIdCard(id) {
     const d = res.data;
     let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
     
-    // 身份证正面
     html += '<div style="text-align:center">';
     html += '<p style="margin-bottom:6px;font-weight:600">身份证正面</p>';
     if (d.frontImg) {
-      // 判断是 base64 还是文件路径
       const isBase64 = d.frontImg.startsWith('data:image/');
-      const src = isBase64 ? d.frontImg : (API + (d.frontImg.startsWith('/') ? '' : '/') + d.frontImg);
-      html += '<img src="' + src + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + src + '\', \'_blank\')" title="点击查看原图">';
+      const src = isBase64 ? d.frontImg : (API + d.frontImg);
+      html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">';
       html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
       html += '<p style="color:#999">未上传</p>';
     }
     html += '</div>';
     
-    // 身份证反面
     html += '<div style="text-align:center">';
     html += '<p style="margin-bottom:6px;font-weight:600">身份证反面</p>';
     if (d.backImg) {
       const isBase64 = d.backImg.startsWith('data:image/');
-      const src = isBase64 ? d.backImg : (API + (d.backImg.startsWith('/') ? '' : '/') + d.backImg);
-      html += '<img src="' + src + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + src + '\', \'_blank\')" title="点击查看原图">';
+      const src = isBase64 ? d.backImg : (API + d.backImg);
+      html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">';
       html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
       html += '<p style="color:#999">未上传</p>';
@@ -204,7 +197,10 @@ async function loadAndViewIdCard(id) {
   }
 }
 
-// 通过 openid 删除用户
+function showFullImage(src) {
+  document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>查看原图</h3><img src="' + src + '" class="full-img">';
+}
+
 async function deleteUserByOpenid(openid) {
   if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
   const res = await apiPost('/api/admin/user/delete', { openid });
