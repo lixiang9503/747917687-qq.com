@@ -15,7 +15,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .nav-item.active{border-left:3px solid #4361ee;font-weight:600}
 .nav-item .icon{margin-right:10px;font-size:16px}
 .main{margin-left:220px;flex:1;padding:24px}
-/* 登录页面样式 */
 .login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5}
 .login-box{background:#fff;border-radius:16px;padding:40px;width:360px;box-shadow:0 4px 20px rgba(0,0,0,0.08);text-align:center}
 .login-box h2{font-size:22px;color:#1a1a2e;margin-bottom:8px}
@@ -59,7 +58,6 @@ th{color:#666;font-weight:600;font-size:12px}
 </style>
 </head>
 <body id="appBody">
-<!-- 把登录和主界面作为两个独立区域 -->
 <div id="loginPage" class="login-page">
   <div class="login-box">
     <h2>信阅签 后台</h2>
@@ -83,44 +81,30 @@ th{color:#666;font-weight:600;font-size:12px}
 const API = 'https://seven47917687-qq-com.onrender.com';
 let currentPage = 'realname';
 let adminToken = '';
-let adminRole = '';  // 'admin' 或 'staff'
+let adminRole = '';
 
 // ========== 登录逻辑 ==========
 function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
-  if (!username || !password) {
-    document.getElementById('loginErr').textContent = '请输入账号和密码';
-    return;
-  }
+  if (!username || !password) { document.getElementById('loginErr').textContent = '请输入账号和密码'; return; }
   fetch(API + '/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
   }).then(r => r.json()).then(data => {
     if (data.code === 200) {
-      adminToken = data.token;
-      adminRole = data.role;
-      // 保存到本地存储，防止刷新丢失
-      localStorage.setItem('adminToken', adminToken);
-      localStorage.setItem('adminRole', adminRole);
+      adminToken = data.token; adminRole = data.role;
+      localStorage.setItem('adminToken', adminToken); localStorage.setItem('adminRole', adminRole);
       document.getElementById('loginPage').style.display = 'none';
-      document.getElementById('appMain').style.display = 'block';
-      initSidebar();
-      renderPage();
-    } else {
-      document.getElementById('loginErr').textContent = data.message || '登录失败';
-    }
-  }).catch(() => {
-    document.getElementById('loginErr').textContent = '网络错误，请重试';
-  });
+      document.getElementById('appMain').style.display = 'flex';  // 恢复为 flex
+      initSidebar(); renderPage();
+    } else { document.getElementById('loginErr').textContent = data.message || '登录失败'; }
+  }).catch(() => { document.getElementById('loginErr').textContent = '网络错误，请重试'; });
 }
 
 function doLogout() {
-  localStorage.removeItem('adminToken');
-  localStorage.removeItem('adminRole');
-  adminToken = '';
-  adminRole = '';
+  localStorage.removeItem('adminToken'); localStorage.removeItem('adminRole');
+  adminToken = ''; adminRole = '';
   document.getElementById('loginPage').style.display = 'flex';
   document.getElementById('appMain').style.display = 'none';
   document.getElementById('loginUsername').value = '';
@@ -128,292 +112,119 @@ function doLogout() {
   document.getElementById('loginErr').textContent = '';
 }
 
-// 自动登录恢复
 (function() {
   const savedToken = localStorage.getItem('adminToken');
   const savedRole = localStorage.getItem('adminRole');
-  if (savedToken && savedRole) {
-    adminToken = savedToken;
-    adminRole = savedRole;
+  if (savedToken && savedRole) { adminToken = savedToken; adminRole = savedRole;
     document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('appMain').style.display = 'block';
-    initSidebar();
-    renderPage();
-  }
+    document.getElementById('appMain').style.display = 'flex';   // 修复布局
+    initSidebar(); renderPage(); }
 })();
 
-// ========== 侧边栏初始化 ==========
 function initSidebar() {
   let menuHtml = '<div class="sidebar-logo">📋 信阅签 后台</div><div class="sidebar-nav">';
   menuHtml += '<div class="nav-item active" data-page="realname"><span class="icon">🪪</span>实名审核</div>';
   if (adminRole === 'admin') {
     menuHtml += '<div class="nav-item" data-page="contracts"><span class="icon">📄</span>合同管理</div>';
     menuHtml += '<div class="nav-item" data-page="auth"><span class="icon">🔑</span>授权管理</div>';
+    menuHtml += '<div class="nav-item" data-page="adminAccounts"><span class="icon">⚙️</span>账号管理</div>';
   }
   menuHtml += '</div>';
   document.getElementById('sidebar').innerHTML = menuHtml;
-
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', function() {
       document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-      this.classList.add('active');
-      currentPage = this.dataset.page;
-      renderPage();
+      this.classList.add('active'); currentPage = this.dataset.page; renderPage();
     });
   });
 }
 
-// ========== 工具函数 ==========
-function showToast(msg, type) {
-  type = type || 'success';
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast toast-' + type;
-  t.style.display = 'block';
-  setTimeout(() => t.style.display = 'none', 2500);
-}
-
-function openModal(title, html) {
-  document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>' + title + '</h3>' + html;
-  document.getElementById('modal').classList.add('active');
-}
+function showToast(msg, type) { type = type || 'success'; const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast toast-' + type; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2500); }
+function openModal(title, html) { document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>' + title + '</h3>' + html; document.getElementById('modal').classList.add('active'); }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
-async function apiGet(path) {
-  const headers = {};
-  if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
-  const res = await fetch(API + path, { headers });
-  const data = await res.json();
-  if (data.code === 401) { doLogout(); }
-  return data;
-}
-async function apiPost(path, body) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
-  const res = await fetch(API + path, { method: 'POST', headers, body: JSON.stringify(body) });
-  const data = await res.json();
-  if (data.code === 401) { doLogout(); }
-  return data;
-}
+async function apiGet(path) { const headers = {}; if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken; const res = await fetch(API + path, { headers }); const data = await res.json(); if (data.code === 401) { doLogout(); } return data; }
+async function apiPost(path, body) { const headers = { 'Content-Type': 'application/json' }; if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken; const res = await fetch(API + path, { method: 'POST', headers, body: JSON.stringify(body) }); const data = await res.json(); if (data.code === 401) { doLogout(); } return data; }
 
-async function renderPage() {
-  const main = document.getElementById('mainContent');
-  if (currentPage === 'realname') await renderRealname(main);
-  else if (currentPage === 'contracts') await renderContracts(main);
-  else if (currentPage === 'auth') await renderAuth(main);
-}
+async function renderPage() { const main = document.getElementById('mainContent'); if (currentPage === 'realname') await renderRealname(main); else if (currentPage === 'contracts') await renderContracts(main); else if (currentPage === 'auth') await renderAuth(main); else if (currentPage === 'adminAccounts') await renderAdminAccounts(main); }
 
-// ========== 实名审核 ==========
+// ========== 实名审核 (员工降级处理) ==========
 async function renderRealname(main) {
   const data = await apiGet('/api/admin/realname');
   const allList = data.data || [];
-  
   let blackList = [];
-  try {
-    const usersRes = await apiGet('/api/admin/users');
-    const users = usersRes.data || [];
-    blackList = users.filter(u => u.blacked).map(u => u.openid);
-  } catch(e) {}
-  
+  try { const usersRes = await apiGet('/api/admin/users'); blackList = (usersRes.data || []).filter(u => u.blacked).map(u => u.openid); } catch(e) {}
   let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
   html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr></table></div>';
-  if (adminRole === 'admin') {
-    html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
-  }
-  
-  main.innerHTML = html;
-  window.realnameData = allList;
-  window.blackList = blackList;
-  renderRealnameTable(allList);
+  if (adminRole === 'admin') html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
+  main.innerHTML = html; window.realnameData = allList; window.blackList = blackList; renderRealnameTable(allList);
 }
 
-function searchRealname() {
-  const keyword = document.getElementById('realnameSearch').value.trim().toLowerCase();
-  const filtered = window.realnameData.filter(r => 
-    (r.realname || '').toLowerCase().includes(keyword) || (r.idcard || '').includes(keyword)
-  );
-  renderRealnameTable(filtered);
-}
+function searchRealname() { const keyword = document.getElementById('realnameSearch').value.trim().toLowerCase(); const filtered = window.realnameData.filter(r => (r.realname || '').toLowerCase().includes(keyword) || (r.idcard || '').includes(keyword)); renderRealnameTable(filtered); }
+function renderRealnameTable(list) { const blackList = window.blackList || []; let rows = ''; list.forEach(r => { const isBlacked = blackList.includes(r.openid); rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>'; rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>'; rows += '<td>' + (r.time || '-') + '</td>'; rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td>'; rows += '<td style="min-width:160px">'; if (adminRole === 'admin') { rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> '; rows += isBlacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>'; } else { rows += '-'; } rows += '</td></tr>'; }); document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr>' + rows; }
 
-function renderRealnameTable(list) {
-  const blackList = window.blackList || [];
-  let rows = '';
-  list.forEach(r => {
-    const isBlacked = blackList.includes(r.openid);
-    rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>';
-    rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
-    rows += '<td>' + (r.time || '-') + '</td>';
-    rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td>';
-    rows += '<td style="min-width:160px">';
-    if (adminRole === 'admin') {
-      rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> ';
-      rows += isBlacked 
-        ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>'
-        : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>';
-    } else {
-      rows += '-';
-    }
-    rows += '</td></tr>';
-  });
-  document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr>' + rows;
-}
-
+// 修复图片加载：加上Token
 async function loadAndViewIdCard(id) {
   openModal('身份证件', '<p style="text-align:center;color:#94a3b8">加载中...</p>');
-  const res = await fetch(API + '/api/admin/realname/images?id=' + id).then(r => r.json());
+  const headers = adminToken ? { 'Authorization': 'Bearer ' + adminToken } : {};
+  const res = await fetch(API + '/api/admin/realname/images?id=' + id, { headers }).then(r => r.json());
   if (res.code === 200) {
     const d = res.data;
     let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-    
-    html += '<div style="text-align:center">';
-    html += '<p style="margin-bottom:6px;font-weight:600">身份证正面</p>';
-    if (d.frontImg) {
-      const isBase64 = d.frontImg.startsWith('data:image/');
-      const src = isBase64 ? d.frontImg : (API + d.frontImg);
-      html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">';
-      html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
-    } else {
-      html += '<p style="color:#999">未上传</p>';
-    }
-    html += '</div>';
-    
-    html += '<div style="text-align:center">';
-    html += '<p style="margin-bottom:6px;font-weight:600">身份证反面</p>';
-    if (d.backImg) {
-      const isBase64 = d.backImg.startsWith('data:image/');
-      const src = isBase64 ? d.backImg : (API + d.backImg);
-      html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">';
-      html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
-    } else {
-      html += '<p style="color:#999">未上传</p>';
-    }
-    html += '</div>';
-    
-    html += '</div>';
-    document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>身份证件</h3>' + html;
-  }
-}
+    html += '<div style="text-align:center"><p style="margin-bottom:6px;font-weight:600">身份证正面</p>';
+    if (d.frontImg) { const isBase64 = d.frontImg.startsWith('data:image/'); const src = isBase64 ? d.frontImg : (API + d.frontImg); html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">'; html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>'; } else { html += '<p style="color:#999">未上传</p>'; } html += '</div>';
+    html += '<div style="text-align:center"><p style="margin-bottom:6px;font-weight:600">身份证反面</p>';
+    if (d.backImg) { const isBase64 = d.backImg.startsWith('data:image/'); const src = isBase64 ? d.backImg : (API + d.backImg); html += '<img src="' + src + '" class="id-card-img" onclick="showFullImage(\'' + src + '\')" title="点击查看原图">'; html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>'; } else { html += '<p style="color:#999">未上传</p>'; } html += '</div>';
+    html += '</div>'; document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>身份证件</h3>' + html; } }
 
-function showFullImage(src) {
-  document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>查看原图</h3><img src="' + src + '" class="full-img">';
-}
+function showFullImage(src) { document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>查看原图</h3><img src="' + src + '" class="full-img">'; }
 
-async function deleteUserByOpenid(openid) {
-  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
-  const res = await apiPost('/api/admin/user/delete', { openid });
-  showToast(res.code === 200 ? '已删除' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function blackAccount(openid) {
-  if (!confirm('确定拉黑该账号吗？拉黑后将无法登录。')) return;
-  const res = await apiPost('/api/admin/black/account', { openid });
-  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function unblackAccount(openid) {
-  if (!confirm('确定解除拉黑吗？')) return;
-  const res = await apiPost('/api/admin/black/unaccount', { openid });
-  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function blackIp() {
-  const ip = document.getElementById('ipInput').value.trim();
-  if (!ip) return showToast('请输入IP', 'error');
-  if (!confirm('确定拉黑该IP吗？')) return;
-  const res = await apiPost('/api/admin/black/ip', { ip });
-  showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
-}
+async function deleteUserByOpenid(openid) { if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return; const res = await apiPost('/api/admin/user/delete', { openid }); showToast(res.code === 200 ? '已删除' : (res.message || '失败'), res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
+async function blackAccount(openid) { if (!confirm('确定拉黑该账号吗？拉黑后将无法登录。')) return; const res = await apiPost('/api/admin/black/account', { openid }); showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
+async function unblackAccount(openid) { if (!confirm('确定解除拉黑吗？')) return; const res = await apiPost('/api/admin/black/unaccount', { openid }); showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
+async function blackIp() { const ip = document.getElementById('ipInput').value.trim(); if (!ip) return showToast('请输入IP', 'error'); if (!confirm('确定拉黑该IP吗？')) return; const res = await apiPost('/api/admin/black/ip', { ip }); showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error'); }
 
 // ========== 合同管理 ==========
-async function renderContracts(main) {
-  const data = await apiGet('/api/admin/contracts');
-  const allList = data.data || [];
-  let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>';
-  html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>';
-  html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr></table></div>';
-  main.innerHTML = html;
-  window.contractData = allList;
-  renderContractTable(allList);
-}
-
-function searchContracts() {
-  const keyword = document.getElementById('contractSearch').value.trim().toLowerCase();
-  const filtered = window.contractData.filter(c => 
-    (c.lendername || '').toLowerCase().includes(keyword) || (c.borrowername || '').toLowerCase().includes(keyword)
-  );
-  renderContractTable(filtered);
-}
-
-function renderContractTable(list) {
-  let rows = '';
-  list.forEach(c => {
-    rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td>';
-    rows += '<td>';
-    if (c.status === 'active') {
-      rows += '<button class="btn btn-warning btn-sm" onclick="adminExtend(' + c.id + ')">延期</button> ';
-      rows += '<button class="btn btn-success btn-sm" onclick="adminClose(' + c.id + ')">结清</button>';
-    } else {
-      rows += '-';
-    }
-    rows += '</td></tr>';
-  });
-  document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr>' + rows;
-}
-
-async function adminExtend(contractId) {
-  const newEndDate = prompt('请输入新的截止日期（格式：2026-06-15）：');
-  if (!newEndDate) return;
-  const reason = prompt('请输入延期原因（选填）：') || '后台手动延期';
-  const res = await apiPost('/api/loan/contract/extend', { contractId, newEndDate, reason });
-  if (res.code === 200) {
-    showToast('延期成功');
-    renderPage();
-  } else {
-    showToast('延期失败: ' + (res.message || ''), 'error');
-  }
-}
-
-async function adminClose(contractId) {
-  if (!confirm('确定结清此合同吗？')) return;
-  const res = await apiPost('/api/loan/contract/close', { contractId });
-  if (res.code === 200) {
-    showToast('已结清');
-    renderPage();
-  } else {
-    showToast('结清失败: ' + (res.message || ''), 'error');
-  }
-}
+async function renderContracts(main) { const data = await apiGet('/api/admin/contracts'); const allList = data.data || []; let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>'; html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>'; html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr></table></div>'; main.innerHTML = html; window.contractData = allList; renderContractTable(allList); }
+function searchContracts() { const keyword = document.getElementById('contractSearch').value.trim().toLowerCase(); const filtered = window.contractData.filter(c => (c.lendername || '').toLowerCase().includes(keyword) || (c.borrowername || '').toLowerCase().includes(keyword)); renderContractTable(filtered); }
+function renderContractTable(list) { let rows = ''; list.forEach(c => { rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td>'; rows += '<td>'; if (c.status === 'active') { rows += '<button class="btn btn-warning btn-sm" onclick="adminExtend(' + c.id + ')">延期</button> '; rows += '<button class="btn btn-success btn-sm" onclick="adminClose(' + c.id + ')">结清</button>'; } else { rows += '-'; } rows += '</td></tr>'; }); document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr>' + rows; }
+async function adminExtend(contractId) { const newEndDate = prompt('请输入新的截止日期（格式：2026-06-15）：'); if (!newEndDate) return; const reason = prompt('请输入延期原因（选填）：') || '后台手动延期'; const res = await apiPost('/api/loan/contract/extend', { contractId, newEndDate, reason }); if (res.code === 200) { showToast('延期成功'); renderPage(); } else { showToast('延期失败: ' + (res.message || ''), 'error'); } }
+async function adminClose(contractId) { if (!confirm('确定结清此合同吗？')) return; const res = await apiPost('/api/loan/contract/close', { contractId }); if (res.code === 200) { showToast('已结清'); renderPage(); } else { showToast('结清失败: ' + (res.message || ''), 'error'); } }
 
 // ========== 授权管理 ==========
-async function renderAuth(main) {
-  const data = await apiGet('/api/admin/auth/list');
+async function renderAuth(main) { const data = await apiGet('/api/admin/auth/list'); const list = data.data || []; let html = '<div class="card"><h2>授权管理</h2>'; html += '<div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="真实姓名"><input type="text" class="input-field" id="authIdCardInput" placeholder="身份证号"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div>'; html += '<table><tr><th>序号</th><th>姓名</th><th>身份证号</th><th>操作</th></tr>'; list.forEach((item, i) => { html += '<tr><td>' + (i + 1) + '</td><td>' + item.realname + '</td><td>' + item.idcard + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + item.realname + '\',\'' + item.idcard + '\')">取消授权</button></td></tr>'; }); html += '</table></div>'; main.innerHTML = html; }
+async function addAuth() { const realName = document.getElementById('authNameInput').value.trim(); const idCard = document.getElementById('authIdCardInput').value.trim(); if (!realName || !idCard) return showToast('请填写姓名和身份证号', 'error'); const res = await apiPost('/api/admin/auth/add', { realName, idCard }); showToast(res.code === 200 ? '授权成功' : (res.message || '失败'), res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
+async function removeAuth(realName, idCard) { const res = await apiPost('/api/admin/auth/remove', { realName, idCard }); showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
+
+// ========== 后台账号管理 (仅老板) ==========
+async function renderAdminAccounts(main) {
+  const data = await apiGet('/api/admin/accounts');
   const list = data.data || [];
-  let html = '<div class="card"><h2>授权管理</h2>';
-  html += '<div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="真实姓名"><input type="text" class="input-field" id="authIdCardInput" placeholder="身份证号"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div>';
-  html += '<table><tr><th>序号</th><th>姓名</th><th>身份证号</th><th>操作</th></tr>';
-  list.forEach((item, i) => {
-    html += '<tr><td>' + (i + 1) + '</td><td>' + item.realname + '</td><td>' + item.idcard + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + item.realname + '\',\'' + item.idcard + '\')">取消授权</button></td></tr>';
-  });
-  html += '</table></div>';
-  main.innerHTML = html;
+  let html = '<div class="card"><h2>后台账号管理 (共' + list.length + '条)</h2>';
+  html += '<table><tr><th>用户名</th><th>角色</th><th>操作</th></tr>';
+  list.forEach(a => { html += '<tr><td>' + a.username + '</td><td>' + (a.role === 'admin' ? '老板' : '员工') + '</td><td><button class="btn btn-warning btn-sm" onclick="changePassword(\'' + a.username + '\')">修改密码</button> ' + (a.username !== adminRole ? '<button class="btn btn-danger btn-sm" onclick="deleteAdminAccount(\'' + a.username + '\')">删除</button>' : '') + '</td></tr>'; });
+  html += '</table></div>'; main.innerHTML = html;
 }
 
-async function addAuth() {
-  const realName = document.getElementById('authNameInput').value.trim();
-  const idCard = document.getElementById('authIdCardInput').value.trim();
-  if (!realName || !idCard) return showToast('请填写姓名和身份证号', 'error');
-  const res = await apiPost('/api/admin/auth/add', { realName, idCard });
-  showToast(res.code === 200 ? '授权成功' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
+async function changePassword(username) {
+  openModal('修改密码 - ' + username,
+    '<input type="password" id="oldPass" class="input-field" placeholder="旧密码"><br>' +
+    '<input type="password" id="newPass" class="input-field" placeholder="新密码"><br>' +
+    '<button class="btn btn-primary" onclick="submitChangePassword(\'' + username + '\')">确定修改</button>');
 }
-
-async function removeAuth(realName, idCard) {
-  const res = await apiPost('/api/admin/auth/remove', { realName, idCard });
-  showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error');
+async function submitChangePassword(username) {
+  const oldPass = document.getElementById('oldPass').value;
+  const newPass = document.getElementById('newPass').value;
+  if (!oldPass || !newPass) return showToast('请填写完整', 'error');
+  const res = await apiPost('/api/admin/change-password', { username, oldPassword: oldPass, newPassword: newPass });
+  showToast(res.code === 200 ? '密码已修改' : (res.message || '修改失败'), res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) { closeModal(); renderPage(); }
+}
+async function deleteAdminAccount(username) {
+  if (!confirm('确定删除后台账号 ' + username + ' 吗？此操作不可恢复。')) return;
+  const res = await apiPost('/api/admin/delete-account', { username });
+  showToast(res.code === 200 ? '已删除' : (res.message || '删除失败'), res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
 </script>
