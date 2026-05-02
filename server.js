@@ -128,6 +128,20 @@ const server = http.createServer(async (req, res) => {
     let post = {};
     try { post = body ? JSON.parse(body) : {}; } catch (e) {}
 
+    // ========== 静态文件：后台管理页面 ==========
+    if (path === '/admin.html' && req.method === 'GET') {
+        const adminPath = path.join(__dirname, 'admin.html');
+        if (fs.existsSync(adminPath)) {
+            const htmlContent = fs.readFileSync(adminPath, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(htmlContent);
+        } else {
+            res.writeHead(404);
+            res.end('admin.html not found');
+        }
+        return;
+    }
+
     // ========== 静态文件服务：访问上传的图片 ==========
     if (path.startsWith('/uploads/')) {
         const filename = path.replace('/uploads/', '');
