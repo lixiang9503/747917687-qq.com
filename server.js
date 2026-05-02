@@ -122,14 +122,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
     const url = new URL(req.url, 'http://' + req.headers.host);
-    const path = url.pathname;
+    const reqPath = url.pathname;  // ✅ 改名为 reqPath，避免覆盖 path 模块
     let body = '';
     try { for await (const chunk of req) body += chunk; } catch (e) {}
     let post = {};
     try { post = body ? JSON.parse(body) : {}; } catch (e) {}
 
     // ========== 静态文件：后台管理页面 ==========
-    if (path === '/admin.html' && req.method === 'GET') {
+    if (reqPath === '/admin.html' && req.method === 'GET') {
         const adminPath = path.join(__dirname, 'admin.html');
         if (fs.existsSync(adminPath)) {
             const htmlContent = fs.readFileSync(adminPath, 'utf8');
@@ -143,8 +143,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ========== 静态文件服务：访问上传的图片 ==========
-    if (path.startsWith('/uploads/')) {
-        const filename = path.replace('/uploads/', '');
+    if (reqPath.startsWith('/uploads/')) {
+        const filename = reqPath.replace('/uploads/', '');
         const filepath = path.join(uploadsDir, filename);
         if (fs.existsSync(filepath)) {
             const ext = path.extname(filename).toLowerCase();
@@ -165,7 +165,7 @@ const server = http.createServer(async (req, res) => {
     if (blackIps.includes(clientIp)) return sendJson(res, { code: 403, message: 'IP blocked' }, 403);
 
     // ========== 公共路由 ==========
-    if (path === '/api/loan/login' && req.method === 'POST') {
+    if (reqPath === '/api/loan/login' && req.method === 'POST') {
         const { openid } = post;
         if (!openid) return sendJson(res, { code: 400 });
         const blacked = (await pool.query('SELECT openid FROM black_accounts WHERE openid=$1', [openid])).rows[0];
@@ -179,11 +179,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Login success', token, user });
     }
 
-    if (path === '/ping') return sendJson(res, { code: 200, message: 'ok' });
+    if (reqPath === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
     // ========== 鉴权（后台接口跳过） ==========
     let currentUser = null;
-    if (!path.startsWith('/api/admin/')) {
+    if (!reqPath.startsWith('/api/admin/')) {
         const auth = req.headers['authorization'];
         if (auth && auth.startsWith('Bearer ')) {
             const token = auth.split(' ')[1];
@@ -196,9 +196,9 @@ const server = http.createServer(async (req, res) => {
                 }
             }
         }
-        if (!currentUser && !path.startsWith('/api/admin/')) {
-            if (path !== '/api/loan/contract/extend' && path !== '/api/loan/contract/close') {
-                if (path.startsWith('/api/loan/') && path !== '/api/loan/login' && path !== '/ping') {
+        if (!currentUser && !reqPath.startsWith('/api/admin/')) {
+            if (reqPath !== '/api/loan/contract/extend' && reqPath !== '/api/loan/contract/close') {
+                if (reqPath.startsWith('/api/loan/') && reqPath !== '/api/loan/login' && reqPath !== '/ping') {
                     return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
                 }
             }
@@ -206,12 +206,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ========== 用户接口 ==========
-    if (path === '/api/loan/realname' && req.method === 'POST') {
+    if (reqPath === '/api/loan/realname' && req.method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const { realName, idCard, frontImg, backImg } = post;
         if (!realName || !idCard) return sendJson(res, { code: 400 });
 
-        // 尝试保存图片，即使失败也不影响实名认证
         const frontImgPath = saveBase64Image(frontImg);
         const backImgPath = saveBase64Image(backImg);
 
@@ -220,7 +219,6 @@ const server = http.createServer(async (req, res) => {
             [realName, idCard, 'verified', beijingTime(), currentUser.openid]
         );
 
-        // 数据库中存储文件路径（可能为空）
         await pool.query(
             'INSERT INTO real_applications(id, openid, realName, idCard, frontImg, backImg, status, time) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
             [Date.now(), currentUser.openid, realName, idCard, frontImgPath, backImgPath, 'approved', beijingTime()]
@@ -230,12 +228,12 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, user: currentUser });
     }
 
-    if (path === '/api/loan/user/info' && req.method === 'GET') {
+    if (reqPath === '/api/loan/user/info' && req.method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         return sendJson(res, { code: 200, user: currentUser });
     }
 
-    if (path === '/api/loan/checkAuth' && req.method === 'GET') {
+    if (reqPath === '/api/loan/checkAuth' && req.method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const authorized = (await pool.query(
             'SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2',
@@ -245,7 +243,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ========== 合同接口 ==========
-    if (path === '/api/loan/contract/list' && req.method === 'GET') {
+    if (reqPath === '/api/loan/contract/list' && req.method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const contracts = (await pool.query(
             'SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC',
@@ -254,7 +252,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: contracts });
     }
 
-    if (path === '/api/loan/contract/detail' && req.method === 'GET') {
+    if (reqPath === '/api/loan/contract/detail' && req.method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         const id = parseInt(url.searchParams.get('id'));
         const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
@@ -263,7 +261,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid });
     }
 
-    if (path === '/api/loan/contract/create' && req.method === 'POST') {
+    if (reqPath === '/api/loan/contract/create' && req.method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
         const authorized = (await pool.query(
@@ -296,7 +294,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, contract });
     }
 
-    if (path === '/api/loan/contract/sign' && req.method === 'POST') {
+    if (reqPath === '/api/loan/contract/sign' && req.method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
         if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 });
         const { contractId, borrowerSignature } = post;
@@ -308,7 +306,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 延期合同：后台操作放行
-    if (path === '/api/loan/contract/extend' && req.method === 'POST') {
+    if (reqPath === '/api/loan/contract/extend' && req.method === 'POST') {
         const { contractId, newEndDate, reason } = post;
         const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
         if (!contract) return sendJson(res, { code: 404 });
@@ -320,7 +318,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 结清合同：后台操作放行
-    if (path === '/api/loan/contract/close' && req.method === 'POST') {
+    if (reqPath === '/api/loan/contract/close' && req.method === 'POST') {
         const { contractId } = post;
         const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
         if (!contract) return sendJson(res, { code: 404 });
@@ -331,7 +329,7 @@ const server = http.createServer(async (req, res) => {
 
     // ========== 后台管理接口 ==========
     // 实名审核：列表不含大图
-    if (path === '/api/admin/realname' && req.method === 'GET') {
+    if (reqPath === '/api/admin/realname' && req.method === 'GET') {
         const page = parseInt(url.searchParams.get('page')) || 1;
         const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
         const offset = (page - 1) * pageSize;
@@ -345,22 +343,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 根据 ID 获取身份证图片数据
-    if (path === '/api/admin/realname/images' && req.method === 'GET') {
+    if (reqPath === '/api/admin/realname/images' && req.method === 'GET') {
         const id = parseInt(url.searchParams.get('id'));
         const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
         if (!row) return sendJson(res, { code: 404, message: 'Not found' });
         return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } });
     }
 
-    if (path === '/api/admin/contracts' && req.method === 'GET') {
+    if (reqPath === '/api/admin/contracts' && req.method === 'GET') {
         const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows;
         return sendJson(res, { code: 200, data });
     }
-    if (path === '/api/admin/auth/list' && req.method === 'GET') {
+    if (reqPath === '/api/admin/auth/list' && req.method === 'GET') {
         const data = (await pool.query('SELECT * FROM authorized_users')).rows;
         return sendJson(res, { code: 200, data });
     }
-    if (path === '/api/admin/auth/add' && req.method === 'POST') {
+    if (reqPath === '/api/admin/auth/add' && req.method === 'POST') {
         const { realName, idCard } = post;
         if (!realName || !idCard) return sendJson(res, { code: 400, message: '姓名和身份证号不能为空' });
         await pool.query(
@@ -369,12 +367,12 @@ const server = http.createServer(async (req, res) => {
         );
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/auth/remove' && req.method === 'POST') {
+    if (reqPath === '/api/admin/auth/remove' && req.method === 'POST') {
         const { realName, idCard } = post;
         await pool.query('DELETE FROM authorized_users WHERE realName=$1 AND idCard=$2', [realName, idCard]);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/users' && req.method === 'GET') {
+    if (reqPath === '/api/admin/users' && req.method === 'GET') {
         const users = (await pool.query('SELECT * FROM users')).rows;
         const authList = (await pool.query('SELECT * FROM authorized_users')).rows;
         const blackList = (await pool.query('SELECT openid FROM black_accounts')).rows.map(r => r.openid);
@@ -389,7 +387,7 @@ const server = http.createServer(async (req, res) => {
         }));
         return sendJson(res, { code: 200, data: result });
     }
-    if (path === '/api/admin/user/delete' && req.method === 'POST') {
+    if (reqPath === '/api/admin/user/delete' && req.method === 'POST') {
         const { openid } = post;
         // 先删除关联的图片文件
         const apps = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE openid=$1', [openid])).rows;
@@ -408,22 +406,22 @@ const server = http.createServer(async (req, res) => {
         await pool.query('DELETE FROM users WHERE openid=$1', [openid]);
         return sendJson(res, { code: 200, message: '删除成功' });
     }
-    if (path === '/api/admin/black/account' && req.method === 'POST') {
+    if (reqPath === '/api/admin/black/account' && req.method === 'POST') {
         const { openid } = post;
         await pool.query('INSERT INTO black_accounts(openid) VALUES($1) ON CONFLICT DO NOTHING', [openid]);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/black/unaccount' && req.method === 'POST') {
+    if (reqPath === '/api/admin/black/unaccount' && req.method === 'POST') {
         const { openid } = post;
         await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/black/ip' && req.method === 'POST') {
+    if (reqPath === '/api/admin/black/ip' && req.method === 'POST') {
         const { ip } = post;
         await pool.query('INSERT INTO black_ips(ip) VALUES($1) ON CONFLICT DO NOTHING', [ip]);
         return sendJson(res, { code: 200 });
     }
-    if (path === '/api/admin/black/unip' && req.method === 'POST') {
+    if (reqPath === '/api/admin/black/unip' && req.method === 'POST') {
         const { ip } = post;
         await pool.query('DELETE FROM black_ips WHERE ip=$1', [ip]);
         return sendJson(res, { code: 200 });
