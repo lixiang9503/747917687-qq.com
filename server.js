@@ -213,13 +213,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Login success', token: adminToken, role: admin.role });
     }
 
-    // ========== 后台账号管理接口 ==========
-    if (reqPath === '/api/admin/accounts' && req.method === 'GET') {
-        // 获取所有后台账号（密码不返回）
-        const accounts = (await pool.query('SELECT id, username, role FROM admin_accounts ORDER BY id')).rows;
-        return sendJson(res, { code: 200, data: accounts });
-    }
-
     // ========== 鉴权（小程序用户接口） ==========
     let currentUser = null;
     if (!reqPath.startsWith('/api/admin/')) {
@@ -437,9 +430,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200 });
     }
 
-    // 用户列表：仅老板
+    // 用户列表：老板和员工都可访问（员工需要用来判断拉黑状态）
     if (reqPath === '/api/admin/users' && req.method === 'GET') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const users = (await pool.query('SELECT * FROM users')).rows;
         const authList = (await pool.query('SELECT * FROM authorized_users')).rows;
         const blackList = (await pool.query('SELECT openid FROM black_accounts')).rows.map(r => r.openid);
@@ -506,6 +498,37 @@ const server = http.createServer(async (req, res) => {
         const { ip } = post;
         await pool.query('DELETE FROM black_ips WHERE ip=$1', [ip]);
         return sendJson(res, { code: 200 });
+    }
+
+    // ========== 后台账号管理接口 ==========
+    // 获取后台账号列表：仅老板
+    if (reqPath === '/api/admin/accounts' && req.method === 'GET') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
+        const accounts = (await pool.query('SELECT id, username, role FROM admin_accounts ORDER BY id')).rows;
+        return sendJson(res, { code: 200, data: accounts });
+    }
+
+    // 修改账号密码：仅老板
+    if (reqPath === '/api/admin/change-password' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
+        const { username, oldPassword, newPassword } = post;
+        if (!username || !oldPassword || !newPassword) return sendJson(res, { code: 400, message: '参数不完整' });
+        // 验证旧密码
+        const account = (await pool.query('SELECT * FROM admin_accounts WHERE username=$1 AND password=$2', [username, oldPassword])).rows[0];
+        if (!account) return sendJson(res, { code: 401, message: '旧密码错误' }, 401);
+        // 更新密码
+        await pool.query('UPDATE admin_accounts SET password=$1 WHERE username=$2', [newPassword, username]);
+        return sendJson(res, { code: 200, message: '密码修改成功' });
+    }
+
+    // 删除后台账号：仅老板，且不能删除自己
+    if (reqPath === '/api/admin/delete-account' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
+        const { username } = post;
+        if (!username) return sendJson(res, { code: 400, message: '缺少用户名' });
+        if (username === adminUser.username) return sendJson(res, { code: 400, message: '不能删除自己的账号' }, 400);
+        await pool.query('DELETE FROM admin_accounts WHERE username=$1', [username]);
+        return sendJson(res, { code: 200, message: '账号已删除' });
     }
 
     sendJson(res, { code: 404 }, 404);
