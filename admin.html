@@ -15,7 +15,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .nav-item.active{border-left:3px solid #4361ee;font-weight:600}
 .nav-item .icon{margin-right:10px;font-size:16px}
 .main{margin-left:220px;flex:1;padding:24px}
-.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5}
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999}
 .login-box{background:#fff;border-radius:16px;padding:40px;width:360px;box-shadow:0 4px 20px rgba(0,0,0,0.08);text-align:center}
 .login-box h2{font-size:22px;color:#1a1a2e;margin-bottom:8px}
 .login-box .sub{font-size:13px;color:#94a3b8;margin-bottom:24px}
@@ -57,7 +57,7 @@ th{color:#666;font-weight:600;font-size:12px}
 .logout-btn{position:fixed;top:16px;right:24px;font-size:12px;color:#94a3b8;cursor:pointer;z-index:999}
 </style>
 </head>
-<body id="appBody">
+<body>
 <div id="loginPage" class="login-page">
   <div class="login-box">
     <h2>信阅签 后台</h2>
@@ -83,7 +83,7 @@ let currentPage = 'realname';
 let adminToken = '';
 let adminRole = '';
 
-// ========== 登录逻辑 ==========
+// 登录
 function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
@@ -96,7 +96,7 @@ function doLogin() {
       adminToken = data.token; adminRole = data.role;
       localStorage.setItem('adminToken', adminToken); localStorage.setItem('adminRole', adminRole);
       document.getElementById('loginPage').style.display = 'none';
-      document.getElementById('appMain').style.display = 'flex';  // 恢复为 flex
+      document.getElementById('appMain').style.display = 'flex';
       initSidebar(); renderPage();
     } else { document.getElementById('loginErr').textContent = data.message || '登录失败'; }
   }).catch(() => { document.getElementById('loginErr').textContent = '网络错误，请重试'; });
@@ -107,9 +107,6 @@ function doLogout() {
   adminToken = ''; adminRole = '';
   document.getElementById('loginPage').style.display = 'flex';
   document.getElementById('appMain').style.display = 'none';
-  document.getElementById('loginUsername').value = '';
-  document.getElementById('loginPassword').value = '';
-  document.getElementById('loginErr').textContent = '';
 }
 
 (function() {
@@ -117,7 +114,7 @@ function doLogout() {
   const savedRole = localStorage.getItem('adminRole');
   if (savedToken && savedRole) { adminToken = savedToken; adminRole = savedRole;
     document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('appMain').style.display = 'flex';   // 修复布局
+    document.getElementById('appMain').style.display = 'flex';
     initSidebar(); renderPage(); }
 })();
 
@@ -148,7 +145,7 @@ async function apiPost(path, body) { const headers = { 'Content-Type': 'applicat
 
 async function renderPage() { const main = document.getElementById('mainContent'); if (currentPage === 'realname') await renderRealname(main); else if (currentPage === 'contracts') await renderContracts(main); else if (currentPage === 'auth') await renderAuth(main); else if (currentPage === 'adminAccounts') await renderAdminAccounts(main); }
 
-// ========== 实名审核 (员工降级处理) ==========
+// 实名审核
 async function renderRealname(main) {
   const data = await apiGet('/api/admin/realname');
   const allList = data.data || [];
@@ -164,7 +161,6 @@ async function renderRealname(main) {
 function searchRealname() { const keyword = document.getElementById('realnameSearch').value.trim().toLowerCase(); const filtered = window.realnameData.filter(r => (r.realname || '').toLowerCase().includes(keyword) || (r.idcard || '').includes(keyword)); renderRealnameTable(filtered); }
 function renderRealnameTable(list) { const blackList = window.blackList || []; let rows = ''; list.forEach(r => { const isBlacked = blackList.includes(r.openid); rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>'; rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>'; rows += '<td>' + (r.time || '-') + '</td>'; rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td>'; rows += '<td style="min-width:160px">'; if (adminRole === 'admin') { rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> '; rows += isBlacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>'; } else { rows += '-'; } rows += '</td></tr>'; }); document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr>' + rows; }
 
-// 修复图片加载：加上Token
 async function loadAndViewIdCard(id) {
   openModal('身份证件', '<p style="text-align:center;color:#94a3b8">加载中...</p>');
   const headers = adminToken ? { 'Authorization': 'Bearer ' + adminToken } : {};
@@ -185,26 +181,39 @@ async function blackAccount(openid) { if (!confirm('确定拉黑该账号吗？�
 async function unblackAccount(openid) { if (!confirm('确定解除拉黑吗？')) return; const res = await apiPost('/api/admin/black/unaccount', { openid }); showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
 async function blackIp() { const ip = document.getElementById('ipInput').value.trim(); if (!ip) return showToast('请输入IP', 'error'); if (!confirm('确定拉黑该IP吗？')) return; const res = await apiPost('/api/admin/black/ip', { ip }); showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error'); }
 
-// ========== 合同管理 ==========
+// 合同管理
 async function renderContracts(main) { const data = await apiGet('/api/admin/contracts'); const allList = data.data || []; let html = '<div class="card"><h2>合同管理 (共' + allList.length + '条)</h2>'; html += '<div class="search-row"><input class="search-input" id="contractSearch" placeholder="搜索出借人或借款人姓名"><button class="search-btn" onclick="searchContracts()">搜索</button></div>'; html += '<table id="contractTable"><tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr></table></div>'; main.innerHTML = html; window.contractData = allList; renderContractTable(allList); }
 function searchContracts() { const keyword = document.getElementById('contractSearch').value.trim().toLowerCase(); const filtered = window.contractData.filter(c => (c.lendername || '').toLowerCase().includes(keyword) || (c.borrowername || '').toLowerCase().includes(keyword)); renderContractTable(filtered); }
 function renderContractTable(list) { let rows = ''; list.forEach(c => { rows += '<tr><td>' + c.id + '</td><td>' + (c.lendername || '-') + '</td><td>' + (c.borrowername || '-') + '</td><td>¥' + c.amount + '</td><td>' + c.status + '</td><td>' + c.startdate + ' ~ ' + c.enddate + '</td>'; rows += '<td>'; if (c.status === 'active') { rows += '<button class="btn btn-warning btn-sm" onclick="adminExtend(' + c.id + ')">延期</button> '; rows += '<button class="btn btn-success btn-sm" onclick="adminClose(' + c.id + ')">结清</button>'; } else { rows += '-'; } rows += '</td></tr>'; }); document.getElementById('contractTable').innerHTML = '<tr><th>ID</th><th>出借人</th><th>借款人</th><th>金额</th><th>状态</th><th>借款日期</th><th>操作</th></tr>' + rows; }
 async function adminExtend(contractId) { const newEndDate = prompt('请输入新的截止日期（格式：2026-06-15）：'); if (!newEndDate) return; const reason = prompt('请输入延期原因（选填）：') || '后台手动延期'; const res = await apiPost('/api/loan/contract/extend', { contractId, newEndDate, reason }); if (res.code === 200) { showToast('延期成功'); renderPage(); } else { showToast('延期失败: ' + (res.message || ''), 'error'); } }
 async function adminClose(contractId) { if (!confirm('确定结清此合同吗？')) return; const res = await apiPost('/api/loan/contract/close', { contractId }); if (res.code === 200) { showToast('已结清'); renderPage(); } else { showToast('结清失败: ' + (res.message || ''), 'error'); } }
 
-// ========== 授权管理 ==========
+// 授权管理
 async function renderAuth(main) { const data = await apiGet('/api/admin/auth/list'); const list = data.data || []; let html = '<div class="card"><h2>授权管理</h2>'; html += '<div class="row"><input type="text" class="input-field" id="authNameInput" placeholder="真实姓名"><input type="text" class="input-field" id="authIdCardInput" placeholder="身份证号"><button class="btn btn-primary" onclick="addAuth()">添加授权</button></div>'; html += '<table><tr><th>序号</th><th>姓名</th><th>身份证号</th><th>操作</th></tr>'; list.forEach((item, i) => { html += '<tr><td>' + (i + 1) + '</td><td>' + item.realname + '</td><td>' + item.idcard + '</td><td><button class="btn btn-danger btn-sm" onclick="removeAuth(\'' + item.realname + '\',\'' + item.idcard + '\')">取消授权</button></td></tr>'; }); html += '</table></div>'; main.innerHTML = html; }
 async function addAuth() { const realName = document.getElementById('authNameInput').value.trim(); const idCard = document.getElementById('authIdCardInput').value.trim(); if (!realName || !idCard) return showToast('请填写姓名和身份证号', 'error'); const res = await apiPost('/api/admin/auth/add', { realName, idCard }); showToast(res.code === 200 ? '授权成功' : (res.message || '失败'), res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
 async function removeAuth(realName, idCard) { const res = await apiPost('/api/admin/auth/remove', { realName, idCard }); showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error'); if (res.code === 200) renderPage(); }
 
-// ========== 后台账号管理 (仅老板) ==========
+// 后台账号管理
 async function renderAdminAccounts(main) {
   const data = await apiGet('/api/admin/accounts');
   const list = data.data || [];
   let html = '<div class="card"><h2>后台账号管理 (共' + list.length + '条)</h2>';
   html += '<table><tr><th>用户名</th><th>角色</th><th>操作</th></tr>';
-  list.forEach(a => { html += '<tr><td>' + a.username + '</td><td>' + (a.role === 'admin' ? '老板' : '员工') + '</td><td><button class="btn btn-warning btn-sm" onclick="changePassword(\'' + a.username + '\')">修改密码</button> ' + (a.username !== adminRole ? '<button class="btn btn-danger btn-sm" onclick="deleteAdminAccount(\'' + a.username + '\')">删除</button>' : '') + '</td></tr>'; });
+  list.forEach(a => { html += '<tr><td>' + a.username + '</td><td>' + (a.role === 'admin' ? '老板' : '员工') + '</td><td><button class="btn btn-warning btn-sm" onclick="changeAdminUsername(\'' + a.username + '\')">修改账号</button> <button class="btn btn-warning btn-sm" onclick="changePassword(\'' + a.username + '\')">修改密码</button> ' + (a.role !== 'admin' ? '<button class="btn btn-danger btn-sm" onclick="deleteAdminAccount(\'' + a.username + '\')">删除</button>' : '') + '</td></tr>'; });
   html += '</table></div>'; main.innerHTML = html;
+}
+
+async function changeAdminUsername(username) {
+  openModal('修改账号 - ' + username,
+    '<input type="text" id="newUsername" class="input-field" placeholder="新用户名"><br>' +
+    '<button class="btn btn-primary" onclick="submitChangeUsername(\'' + username + '\')">确定修改</button>');
+}
+async function submitChangeUsername(username) {
+  const newUsername = document.getElementById('newUsername').value.trim();
+  if (!newUsername) return showToast('请输入新用户名', 'error');
+  const res = await apiPost('/api/admin/change-username', { username, newUsername });
+  showToast(res.code === 200 ? '用户名已修改' : (res.message || '修改失败'), res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) { closeModal(); renderPage(); }
 }
 
 async function changePassword(username) {
