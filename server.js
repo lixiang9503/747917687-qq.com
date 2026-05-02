@@ -84,7 +84,29 @@ async function initDB() {
         CREATE TABLE IF NOT EXISTS black_ips (
             ip TEXT PRIMARY KEY
         );
+        -- 新增：后台管理账号表
+        CREATE TABLE IF NOT EXISTS admin_accounts (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'staff'  -- admin 或 staff
+        );
     `);
+
+    // 插入默认老板和员工账号（如果不存在）
+    try {
+        await pool.query(
+            "INSERT INTO admin_accounts (username, password, role) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
+            ['admin', 'xinyueqian2026', 'admin']
+        );
+        await pool.query(
+            "INSERT INTO admin_accounts (username, password, role) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
+            ['staff', 'staff123456', 'staff']
+        );
+    } catch (e) {
+        console.error('插入默认账号失败:', e);
+    }
+
     console.log('数据库初始化完成');
 }
 initDB();
@@ -122,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
     const url = new URL(req.url, 'http://' + req.headers.host);
-    const reqPath = url.pathname;  // ✅ 改名为 reqPath，避免覆盖 path 模块
+    const reqPath = url.pathname;
     let body = '';
     try { for await (const chunk of req) body += chunk; } catch (e) {}
     let post = {};
@@ -181,7 +203,24 @@ const server = http.createServer(async (req, res) => {
 
     if (reqPath === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-    // ========== 鉴权（后台接口跳过） ==========
+    // ========== 后台登录接口 ==========
+    if (reqPath === '/api/admin/login' && req.method === 'POST') {
+        const { username, password } = post;
+        if (!username || !password) return sendJson(res, { code: 400, message: '账号和密码不能为空' });
+        const admin = (await pool.query('SELECT * FROM admin_accounts WHERE username=$1 AND password=$2', [username, password])).rows[0];
+        if (!admin) return sendJson(res, { code: 401, message: '账号或密码错误' }, 401);
+        const adminToken = signToken({ role: admin.role, username: admin.username });
+        return sendJson(res, { code: 200, message: 'Login success', token: adminToken, role: admin.role });
+    }
+
+    // ========== 后台账号管理接口 ==========
+    if (reqPath === '/api/admin/accounts' && req.method === 'GET') {
+        // 获取所有后台账号（密码不返回）
+        const accounts = (await pool.query('SELECT id, username, role FROM admin_accounts ORDER BY id')).rows;
+        return sendJson(res, { code: 200, data: accounts });
+    }
+
+    // ========== 鉴权（小程序用户接口） ==========
     let currentUser = null;
     if (!reqPath.startsWith('/api/admin/')) {
         const auth = req.headers['authorization'];
@@ -203,6 +242,20 @@ const server = http.createServer(async (req, res) => {
                 }
             }
         }
+    }
+
+    // ========== 后台管理员鉴权 ==========
+    let adminUser = null;
+    if (reqPath.startsWith('/api/admin/') && reqPath !== '/api/admin/login') {
+        const auth = req.headers['authorization'];
+        if (auth && auth.startsWith('Bearer ')) {
+            const token = auth.split(' ')[1];
+            const decoded = verifyToken(token);
+            if (decoded && decoded.role) {
+                adminUser = decoded;
+            }
+        }
+        if (!adminUser) return sendJson(res, { code: 401, message: '请先登录后台' }, 401);
     }
 
     // ========== 用户接口 ==========
@@ -327,8 +380,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Closed' });
     }
 
-    // ========== 后台管理接口 ==========
-    // 实名审核：列表不含大图
+    // ========== 后台管理接口（带权限校验） ==========
+    // 实名审核：老板和员工都可访问
     if (reqPath === '/api/admin/realname' && req.method === 'GET') {
         const page = parseInt(url.searchParams.get('page')) || 1;
         const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
@@ -342,7 +395,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: rows, page, pageSize, total });
     }
 
-    // 根据 ID 获取身份证图片数据
+    // 根据 ID 获取身份证图片数据（老板和员工都可）
     if (reqPath === '/api/admin/realname/images' && req.method === 'GET') {
         const id = parseInt(url.searchParams.get('id'));
         const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
@@ -350,15 +403,23 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } });
     }
 
+    // 合同管理：仅老板
     if (reqPath === '/api/admin/contracts' && req.method === 'GET') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows;
         return sendJson(res, { code: 200, data });
     }
+
+    // 授权列表：仅老板
     if (reqPath === '/api/admin/auth/list' && req.method === 'GET') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const data = (await pool.query('SELECT * FROM authorized_users')).rows;
         return sendJson(res, { code: 200, data });
     }
+
+    // 添加授权：仅老板
     if (reqPath === '/api/admin/auth/add' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { realName, idCard } = post;
         if (!realName || !idCard) return sendJson(res, { code: 400, message: '姓名和身份证号不能为空' });
         await pool.query(
@@ -367,12 +428,18 @@ const server = http.createServer(async (req, res) => {
         );
         return sendJson(res, { code: 200 });
     }
+
+    // 取消授权：仅老板
     if (reqPath === '/api/admin/auth/remove' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { realName, idCard } = post;
         await pool.query('DELETE FROM authorized_users WHERE realName=$1 AND idCard=$2', [realName, idCard]);
         return sendJson(res, { code: 200 });
     }
+
+    // 用户列表：仅老板
     if (reqPath === '/api/admin/users' && req.method === 'GET') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const users = (await pool.query('SELECT * FROM users')).rows;
         const authList = (await pool.query('SELECT * FROM authorized_users')).rows;
         const blackList = (await pool.query('SELECT openid FROM black_accounts')).rows.map(r => r.openid);
@@ -387,9 +454,11 @@ const server = http.createServer(async (req, res) => {
         }));
         return sendJson(res, { code: 200, data: result });
     }
+
+    // 删除用户：仅老板
     if (reqPath === '/api/admin/user/delete' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { openid } = post;
-        // 先删除关联的图片文件
         const apps = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE openid=$1', [openid])).rows;
         apps.forEach(app => {
             [app.frontimg, app.backimg].forEach(imgPath => {
@@ -406,22 +475,34 @@ const server = http.createServer(async (req, res) => {
         await pool.query('DELETE FROM users WHERE openid=$1', [openid]);
         return sendJson(res, { code: 200, message: '删除成功' });
     }
+
+    // 拉黑账号：仅老板
     if (reqPath === '/api/admin/black/account' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { openid } = post;
         await pool.query('INSERT INTO black_accounts(openid) VALUES($1) ON CONFLICT DO NOTHING', [openid]);
         return sendJson(res, { code: 200 });
     }
+
+    // 解除拉黑：仅老板
     if (reqPath === '/api/admin/black/unaccount' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { openid } = post;
         await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]);
         return sendJson(res, { code: 200 });
     }
+
+    // 拉黑IP：仅老板
     if (reqPath === '/api/admin/black/ip' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { ip } = post;
         await pool.query('INSERT INTO black_ips(ip) VALUES($1) ON CONFLICT DO NOTHING', [ip]);
         return sendJson(res, { code: 200 });
     }
+
+    // 解除拉黑IP：仅老板
     if (reqPath === '/api/admin/black/unip' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { ip } = post;
         await pool.query('DELETE FROM black_ips WHERE ip=$1', [ip]);
         return sendJson(res, { code: 200 });
