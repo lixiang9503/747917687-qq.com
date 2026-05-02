@@ -15,6 +15,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .nav-item.active{border-left:3px solid #4361ee;font-weight:600}
 .nav-item .icon{margin-right:10px;font-size:16px}
 .main{margin-left:220px;flex:1;padding:24px}
+/* 登录页面样式 */
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5}
+.login-box{background:#fff;border-radius:16px;padding:40px;width:360px;box-shadow:0 4px 20px rgba(0,0,0,0.08);text-align:center}
+.login-box h2{font-size:22px;color:#1a1a2e;margin-bottom:8px}
+.login-box .sub{font-size:13px;color:#94a3b8;margin-bottom:24px}
+.login-box input{width:100%;padding:12px 16px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;outline:none}
+.login-box input:focus{border-color:#4361ee}
+.login-box button{width:100%;padding:12px;background:#4361ee;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px}
+.login-box .err{color:#ef4444;font-size:13px;margin-top:8px}
 .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .card h2{font-size:18px;margin-bottom:16px;color:#1a1a2e}
 .search-row{display:flex;gap:10px;margin-bottom:16px;align-items:center}
@@ -46,36 +55,115 @@ th{color:#666;font-weight:600;font-size:12px}
 .toast-error{background:#ef4444}
 .id-card-img{max-width:200px;max-height:150px;margin:4px;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer}
 .full-img{width:100%;max-height:70vh;object-fit:contain;border-radius:8px}
+.logout-btn{position:fixed;top:16px;right:24px;font-size:12px;color:#94a3b8;cursor:pointer;z-index:999}
 </style>
 </head>
-<body>
-
-<div class="sidebar">
-  <div class="sidebar-logo">📋 信阅签 后台</div>
-  <div class="sidebar-nav">
-    <div class="nav-item active" data-page="realname"><span class="icon">🪪</span>实名审核</div>
-    <div class="nav-item" data-page="contracts"><span class="icon">📄</span>合同管理</div>
-    <div class="nav-item" data-page="auth"><span class="icon">🔑</span>授权管理</div>
+<body id="appBody">
+<!-- 把登录和主界面作为两个独立区域 -->
+<div id="loginPage" class="login-page">
+  <div class="login-box">
+    <h2>信阅签 后台</h2>
+    <div class="sub">请输入账号密码登录</div>
+    <input type="text" id="loginUsername" placeholder="账号" autocomplete="off">
+    <input type="password" id="loginPassword" placeholder="密码">
+    <button onclick="doLogin()">登 录</button>
+    <div class="err" id="loginErr"></div>
   </div>
 </div>
 
-<div class="main" id="mainContent"></div>
-<div class="modal" id="modal"><div class="modal-content" id="modalContent"></div></div>
-<div id="toast" class="toast"></div>
+<div id="appMain" style="display:none">
+  <div class="logout-btn" onclick="doLogout()">退出登录</div>
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main" id="mainContent"></div>
+  <div class="modal" id="modal"><div class="modal-content" id="modalContent"></div></div>
+  <div id="toast" class="toast"></div>
+</div>
 
 <script>
 const API = 'https://seven47917687-qq-com.onrender.com';
 let currentPage = 'realname';
+let adminToken = '';
+let adminRole = '';  // 'admin' 或 'staff'
 
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', function() {
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    this.classList.add('active');
-    currentPage = this.dataset.page;
-    renderPage();
+// ========== 登录逻辑 ==========
+function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+  if (!username || !password) {
+    document.getElementById('loginErr').textContent = '请输入账号和密码';
+    return;
+  }
+  fetch(API + '/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  }).then(r => r.json()).then(data => {
+    if (data.code === 200) {
+      adminToken = data.token;
+      adminRole = data.role;
+      // 保存到本地存储，防止刷新丢失
+      localStorage.setItem('adminToken', adminToken);
+      localStorage.setItem('adminRole', adminRole);
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('appMain').style.display = 'block';
+      initSidebar();
+      renderPage();
+    } else {
+      document.getElementById('loginErr').textContent = data.message || '登录失败';
+    }
+  }).catch(() => {
+    document.getElementById('loginErr').textContent = '网络错误，请重试';
   });
-});
+}
 
+function doLogout() {
+  localStorage.removeItem('adminToken');
+  localStorage.removeItem('adminRole');
+  adminToken = '';
+  adminRole = '';
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('appMain').style.display = 'none';
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginErr').textContent = '';
+}
+
+// 自动登录恢复
+(function() {
+  const savedToken = localStorage.getItem('adminToken');
+  const savedRole = localStorage.getItem('adminRole');
+  if (savedToken && savedRole) {
+    adminToken = savedToken;
+    adminRole = savedRole;
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('appMain').style.display = 'block';
+    initSidebar();
+    renderPage();
+  }
+})();
+
+// ========== 侧边栏初始化 ==========
+function initSidebar() {
+  let menuHtml = '<div class="sidebar-logo">📋 信阅签 后台</div><div class="sidebar-nav">';
+  menuHtml += '<div class="nav-item active" data-page="realname"><span class="icon">🪪</span>实名审核</div>';
+  if (adminRole === 'admin') {
+    menuHtml += '<div class="nav-item" data-page="contracts"><span class="icon">📄</span>合同管理</div>';
+    menuHtml += '<div class="nav-item" data-page="auth"><span class="icon">🔑</span>授权管理</div>';
+  }
+  menuHtml += '</div>';
+  document.getElementById('sidebar').innerHTML = menuHtml;
+
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', function() {
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      this.classList.add('active');
+      currentPage = this.dataset.page;
+      renderPage();
+    });
+  });
+}
+
+// ========== 工具函数 ==========
 function showToast(msg, type) {
   type = type || 'success';
   const t = document.getElementById('toast');
@@ -92,16 +180,20 @@ function openModal(title, html) {
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
 async function apiGet(path) {
-  const res = await fetch(API + path);
-  return await res.json();
+  const headers = {};
+  if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
+  const res = await fetch(API + path, { headers });
+  const data = await res.json();
+  if (data.code === 401) { doLogout(); }
+  return data;
 }
 async function apiPost(path, body) {
-  const res = await fetch(API + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return await res.json();
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
+  const res = await fetch(API + path, { method: 'POST', headers, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (data.code === 401) { doLogout(); }
+  return data;
 }
 
 async function renderPage() {
@@ -126,7 +218,9 @@ async function renderRealname(main) {
   let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
   html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr></table></div>';
-  html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
+  if (adminRole === 'admin') {
+    html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
+  }
   
   main.innerHTML = html;
   window.realnameData = allList;
@@ -152,10 +246,14 @@ function renderRealnameTable(list) {
     rows += '<td>' + (r.time || '-') + '</td>';
     rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td>';
     rows += '<td style="min-width:160px">';
-    rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> ';
-    rows += isBlacked 
-      ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>'
-      : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>';
+    if (adminRole === 'admin') {
+      rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> ';
+      rows += isBlacked 
+        ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>'
+        : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>';
+    } else {
+      rows += '-';
+    }
     rows += '</td></tr>';
   });
   document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr>' + rows;
@@ -318,8 +416,6 @@ async function removeAuth(realName, idCard) {
   showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
 }
-
-renderPage();
 </script>
 </body>
 </html>
