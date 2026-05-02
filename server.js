@@ -97,17 +97,22 @@ function sendJson(res, data, code = 200) {
     res.end(JSON.stringify(data));
 }
 
-// 保存 base64 图片到本地文件，返回文件名
+// 保存 base64 图片到本地文件，增强错误处理，失败时返回空字符串
 function saveBase64Image(base64Data) {
     if (!base64Data || !base64Data.startsWith('data:image/')) return '';
-    const matches = base64Data.match(/^data:image\/(.*);base64,(.*)$/);
-    if (!matches) return '';
-    const ext = matches[1] === 'png' ? 'png' : 'jpg';
-    const data = matches[2];
-    const filename = Date.now() + '_' + Math.random().toString(36).substring(2, 8) + '.' + ext;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, Buffer.from(data, 'base64'));
-    return '/uploads/' + filename;
+    try {
+        const matches = base64Data.match(/^data:image\/(.*);base64,(.*)$/);
+        if (!matches) return '';
+        const ext = matches[1] === 'png' ? 'png' : 'jpg';
+        const data = matches[2];
+        const filename = Date.now() + '_' + Math.random().toString(36).substring(2, 8) + '.' + ext;
+        const filepath = path.join(uploadsDir, filename);
+        fs.writeFileSync(filepath, Buffer.from(data, 'base64'));
+        return '/uploads/' + filename;
+    } catch (e) {
+        console.error('保存图片失败:', e);
+        return ''; // 失败时返回空字符串，不抛出异常
+    }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -192,7 +197,7 @@ const server = http.createServer(async (req, res) => {
         const { realName, idCard, frontImg, backImg } = post;
         if (!realName || !idCard) return sendJson(res, { code: 400 });
 
-        // 将 base64 图片保存为本地文件
+        // 尝试保存图片，即使失败也不影响实名认证
         const frontImgPath = saveBase64Image(frontImg);
         const backImgPath = saveBase64Image(backImg);
 
@@ -201,7 +206,7 @@ const server = http.createServer(async (req, res) => {
             [realName, idCard, 'verified', beijingTime(), currentUser.openid]
         );
 
-        // 数据库中存储文件路径，不再存 base64
+        // 数据库中存储文件路径（可能为空）
         await pool.query(
             'INSERT INTO real_applications(id, openid, realName, idCard, frontImg, backImg, status, time) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
             [Date.now(), currentUser.openid, realName, idCard, frontImgPath, backImgPath, 'approved', beijingTime()]
@@ -311,14 +316,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ========== 后台管理接口 ==========
-    // 实名审核：列表不含大图，返回图片路径即可
+    // 实名审核：列表不含大图
     if (path === '/api/admin/realname' && req.method === 'GET') {
         const page = parseInt(url.searchParams.get('page')) || 1;
         const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
         const offset = (page - 1) * pageSize;
         const countResult = await pool.query('SELECT COUNT(*) FROM real_applications');
         const total = parseInt(countResult.rows[0].count);
-        // 返回完整路径，方便后台直接使用
         const rows = (await pool.query(
             'SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2',
             [pageSize, offset]
@@ -326,7 +330,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, data: rows, page, pageSize, total });
     }
 
-    // 根据 ID 获取身份证图片：直接返回文件路径
+    // 根据 ID 获取身份证图片数据
     if (path === '/api/admin/realname/images' && req.method === 'GET') {
         const id = parseInt(url.searchParams.get('id'));
         const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
@@ -373,7 +377,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/api/admin/user/delete' && req.method === 'POST') {
         const { openid } = post;
-        // 先获取该用户的图片路径并删除文件
+        // 先删除关联的图片文件
         const apps = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE openid=$1', [openid])).rows;
         apps.forEach(app => {
             [app.frontimg, app.backimg].forEach(imgPath => {
