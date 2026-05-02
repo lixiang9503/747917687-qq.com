@@ -45,6 +45,7 @@ th{color:#666;font-weight:600;font-size:12px}
 .toast-success{background:#10b981}
 .toast-error{background:#ef4444}
 .id-card-img{max-width:200px;max-height:150px;margin:4px;border-radius:8px;border:1px solid #e5e7eb}
+.action-separator{display:inline-block;width:1px;height:20px;background:#d1d5db;margin:0 8px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -55,7 +56,6 @@ th{color:#666;font-weight:600;font-size:12px}
     <div class="nav-item active" data-page="realname"><span class="icon">🪪</span>实名审核</div>
     <div class="nav-item" data-page="contracts"><span class="icon">📄</span>合同管理</div>
     <div class="nav-item" data-page="auth"><span class="icon">🔑</span>授权管理</div>
-    <div class="nav-item" data-page="accounts"><span class="icon">👥</span>账号管理</div>
   </div>
 </div>
 
@@ -109,18 +109,32 @@ async function renderPage() {
   if (currentPage === 'realname') await renderRealname(main);
   else if (currentPage === 'contracts') await renderContracts(main);
   else if (currentPage === 'auth') await renderAuth(main);
-  else if (currentPage === 'accounts') await renderAccounts(main);
 }
 
 // ========== 实名审核 ==========
 async function renderRealname(main) {
+  // 获取实名记录
   const data = await apiGet('/api/admin/realname');
   const allList = data.data || [];
+  
+  // 获取拉黑列表
+  let blackList = [];
+  try {
+    const usersRes = await apiGet('/api/admin/users');
+    const users = usersRes.data || [];
+    blackList = users.filter(u => u.blacked).map(u => u.openid);
+  } catch(e) {}
+  
   let html = '<div class="card"><h2>实名审核 (共' + allList.length + '条)</h2>';
   html += '<div class="search-row"><input class="search-input" id="realnameSearch" placeholder="搜索姓名或身份证号"><button class="search-btn" onclick="searchRealname()">搜索</button></div>';
-  html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th></tr></table></div>';
+  html += '<table id="realnameTable"><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr></table></div>';
+  
+  // 拉黑IP管理放在实名审核底部
+  html += '<div class="card" style="margin-top:16px"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
+  
   main.innerHTML = html;
   window.realnameData = allList;
+  window.blackList = blackList;
   renderRealnameTable(allList);
 }
 
@@ -133,14 +147,22 @@ function searchRealname() {
 }
 
 function renderRealnameTable(list) {
+  const blackList = window.blackList || [];
   let rows = '';
   list.forEach(r => {
+    const isBlacked = blackList.includes(r.openid);
     rows += '<tr><td>' + r.id + '</td><td>' + (r.realname || '-') + '</td><td>' + (r.idcard || '-') + '</td>';
     rows += '<td><span class="badge ' + (r.status === 'approved' ? 'badge-success' : 'badge-warning') + '">' + (r.status === 'approved' ? '已通过' : '待审核') + '</span></td>';
     rows += '<td>' + (r.time || '-') + '</td>';
-    rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td></tr>';
+    rows += '<td><button class="btn btn-secondary btn-sm" onclick="loadAndViewIdCard(' + r.id + ')">查看证件</button></td>';
+    rows += '<td style="min-width:160px">';
+    rows += '<button class="btn btn-danger btn-sm" onclick="deleteUserByOpenid(\'' + r.openid + '\')">删除</button> ';
+    rows += isBlacked 
+      ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + r.openid + '\')">解除拉黑</button>'
+      : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + r.openid + '\')">拉黑账号</button>';
+    rows += '</td></tr>';
   });
-  document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th></tr>' + rows;
+  document.getElementById('realnameTable').innerHTML = '<tr><th>ID</th><th>姓名</th><th>身份证号</th><th>状态</th><th>认证时间</th><th>证件</th><th>操作</th></tr>' + rows;
 }
 
 async function loadAndViewIdCard(id) {
@@ -148,16 +170,16 @@ async function loadAndViewIdCard(id) {
   const res = await fetch(API + '/api/admin/realname/images?id=' + id).then(r => r.json());
   if (res.code === 200) {
     const d = res.data;
-    const frontUrl = d.frontImg ? API + d.frontImg : '';
-    const backUrl = d.backImg ? API + d.backImg : '';
-    
     let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
     
     // 身份证正面
     html += '<div style="text-align:center">';
     html += '<p style="margin-bottom:6px;font-weight:600">身份证正面</p>';
-    if (frontUrl) {
-      html += '<img src="' + frontUrl + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + frontUrl + '\', \'_blank\')" title="点击查看原图">';
+    if (d.frontImg) {
+      // 判断是 base64 还是文件路径
+      const isBase64 = d.frontImg.startsWith('data:image/');
+      const src = isBase64 ? d.frontImg : (API + (d.frontImg.startsWith('/') ? '' : '/') + d.frontImg);
+      html += '<img src="' + src + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + src + '\', \'_blank\')" title="点击查看原图">';
       html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
       html += '<p style="color:#999">未上传</p>';
@@ -167,8 +189,10 @@ async function loadAndViewIdCard(id) {
     // 身份证反面
     html += '<div style="text-align:center">';
     html += '<p style="margin-bottom:6px;font-weight:600">身份证反面</p>';
-    if (backUrl) {
-      html += '<img src="' + backUrl + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + backUrl + '\', \'_blank\')" title="点击查看原图">';
+    if (d.backImg) {
+      const isBase64 = d.backImg.startsWith('data:image/');
+      const src = isBase64 ? d.backImg : (API + (d.backImg.startsWith('/') ? '' : '/') + d.backImg);
+      html += '<img src="' + src + '" style="max-width:200px;max-height:150px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer" onclick="window.open(\'' + src + '\', \'_blank\')" title="点击查看原图">';
       html += '<p style="font-size:11px;color:#94a3b8;margin-top:4px">点击图片查看原图</p>';
     } else {
       html += '<p style="color:#999">未上传</p>';
@@ -178,6 +202,36 @@ async function loadAndViewIdCard(id) {
     html += '</div>';
     document.getElementById('modalContent').innerHTML = '<button class="close-btn" onclick="closeModal()">✕</button><h3>身份证件</h3>' + html;
   }
+}
+
+// 通过 openid 删除用户
+async function deleteUserByOpenid(openid) {
+  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
+  const res = await apiPost('/api/admin/user/delete', { openid });
+  showToast(res.code === 200 ? '已删除' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+
+async function blackAccount(openid) {
+  if (!confirm('确定拉黑该账号吗？拉黑后将无法登录。')) return;
+  const res = await apiPost('/api/admin/black/account', { openid });
+  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+
+async function unblackAccount(openid) {
+  if (!confirm('确定解除拉黑吗？')) return;
+  const res = await apiPost('/api/admin/black/unaccount', { openid });
+  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
+  if (res.code === 200) renderPage();
+}
+
+async function blackIp() {
+  const ip = document.getElementById('ipInput').value.trim();
+  if (!ip) return showToast('请输入IP', 'error');
+  if (!confirm('确定拉黑该IP吗？')) return;
+  const res = await apiPost('/api/admin/black/ip', { ip });
+  showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
 }
 
 // ========== 合同管理 ==========
@@ -267,71 +321,6 @@ async function removeAuth(realName, idCard) {
   const res = await apiPost('/api/admin/auth/remove', { realName, idCard });
   showToast(res.code === 200 ? '已取消' : '失败', res.code === 200 ? 'success' : 'error');
   if (res.code === 200) renderPage();
-}
-
-// ========== 账号管理 ==========
-async function renderAccounts(main) {
-  const data = await apiGet('/api/admin/users');
-  const allList = data.data || [];
-  let html = '<div class="card"><h2>账号管理 (共' + allList.length + '条)</h2>';
-  html += '<div class="search-row"><input class="search-input" id="accountSearch" placeholder="搜索姓名"><button class="search-btn" onclick="searchAccounts()">搜索</button></div>';
-  html += '<table id="accountTable"><tr><th>OpenID</th><th>姓名</th><th>实名状态</th><th>认证时间</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr></table></div>';
-  html += '<div class="card"><h2>拉黑IP管理</h2><div class="row"><input type="text" class="input-field" id="ipInput" placeholder="输入IP地址"><button class="btn btn-danger" onclick="blackIp()">拉黑IP</button></div></div>';
-  main.innerHTML = html;
-  window.accountData = allList;
-  renderAccountTable(allList);
-}
-
-function searchAccounts() {
-  const keyword = document.getElementById('accountSearch').value.trim().toLowerCase();
-  const filtered = window.accountData.filter(u => 
-    (u.realName || '').toLowerCase().includes(keyword)
-  );
-  renderAccountTable(filtered);
-}
-
-function renderAccountTable(list) {
-  let rows = '';
-  list.forEach(u => {
-    rows += '<tr><td>' + u.openid + '</td><td>' + (u.realName || '-') + '</td><td>' + (u.realStatus === 'verified' ? '已实名' : '未实名') + '</td>';
-    rows += '<td>' + (u.realTime || '-') + '</td>';
-    rows += '<td>' + (u.authorized ? '已授权' : '未授权') + '</td>';
-    rows += '<td>' + (u.blacked ? '已拉黑' : '正常') + '</td>';
-    rows += '<td>';
-    rows += '<button class="btn btn-danger btn-sm" onclick="deleteUser(\'' + u.openid + '\')">删除</button> ';
-    rows += u.blacked ? '<button class="btn btn-success btn-sm" onclick="unblackAccount(\'' + u.openid + '\')">解除拉黑</button>' : '<button class="btn btn-warning btn-sm" onclick="blackAccount(\'' + u.openid + '\')">拉黑账号</button>';
-    rows += '</td></tr>';
-  });
-  document.getElementById('accountTable').innerHTML = '<tr><th>OpenID</th><th>姓名</th><th>实名状态</th><th>认证时间</th><th>授权状态</th><th>拉黑</th><th>操作</th></tr>' + rows;
-}
-
-async function deleteUser(openid) {
-  if (!confirm('确定删除该用户所有信息吗？此操作不可恢复！')) return;
-  const res = await apiPost('/api/admin/user/delete', { openid });
-  showToast(res.code === 200 ? '已删除' : (res.message || '失败'), res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function blackAccount(openid) {
-  if (!confirm('确定拉黑该账号吗？拉黑后将无法登录。')) return;
-  const res = await apiPost('/api/admin/black/account', { openid });
-  showToast(res.code === 200 ? '已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function unblackAccount(openid) {
-  if (!confirm('确定解除拉黑吗？')) return;
-  const res = await apiPost('/api/admin/black/unaccount', { openid });
-  showToast(res.code === 200 ? '已解除' : '失败', res.code === 200 ? 'success' : 'error');
-  if (res.code === 200) renderPage();
-}
-
-async function blackIp() {
-  const ip = document.getElementById('ipInput').value.trim();
-  if (!ip) return showToast('请输入IP', 'error');
-  if (!confirm('确定拉黑该IP吗？')) return;
-  const res = await apiPost('/api/admin/black/ip', { ip });
-  showToast(res.code === 200 ? 'IP已拉黑' : '失败', res.code === 200 ? 'success' : 'error');
 }
 
 renderPage();
