@@ -93,7 +93,7 @@ async function initDB() {
         );
     `);
 
-    // 插入默认老板和员工账号（如果不存在）
+    // 插入默认账号
     try {
         await pool.query(
             "INSERT INTO admin_accounts (username, password, role) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
@@ -131,10 +131,7 @@ function saveBase64Image(base64Data) {
         const filepath = path.join(uploadsDir, filename);
         fs.writeFileSync(filepath, Buffer.from(data, 'base64'));
         return '/uploads/' + filename;
-    } catch (e) {
-        console.error('保存图片失败:', e);
-        return '';
-    }
+    } catch (e) { return ''; }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -150,17 +147,14 @@ const server = http.createServer(async (req, res) => {
     let post = {};
     try { post = body ? JSON.parse(body) : {}; } catch (e) {}
 
-    // 静态文件
+    // ========== 静态文件 ==========
     if (reqPath === '/admin.html' && req.method === 'GET') {
         const adminPath = path.join(__dirname, 'admin.html');
         if (fs.existsSync(adminPath)) {
             const htmlContent = fs.readFileSync(adminPath, 'utf8');
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(htmlContent);
-        } else {
-            res.writeHead(404);
-            res.end('admin.html not found');
-        }
+        } else { res.writeHead(404); res.end(); }
         return;
     }
 
@@ -171,12 +165,9 @@ const server = http.createServer(async (req, res) => {
             const ext = path.extname(filename).toLowerCase();
             const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
             const data = fs.readFileSync(filepath);
-            res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'max-age=86400' });
+            res.writeHead(200, { 'Content-Type': contentType });
             res.end(data);
-        } else {
-            res.writeHead(404);
-            res.end();
-        }
+        } else { res.writeHead(404); res.end(); }
         return;
     }
 
@@ -201,7 +192,7 @@ const server = http.createServer(async (req, res) => {
 
     if (reqPath === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-    // 后台登录接口
+    // 后台登录接口，注意后台接口会放在 /api/admin/ 命名空间下，之后需要权限校验
     if (reqPath === '/api/admin/login' && req.method === 'POST') {
         const { username, password } = post;
         if (!username || !password) return sendJson(res, { code: 400, message: '账号和密码不能为空' });
@@ -211,39 +202,26 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { code: 200, message: 'Login success', token: adminToken, role: admin.role });
     }
 
+    // 鉴权
     let currentUser = null;
-    if (!reqPath.startsWith('/api/admin/')) {
-        const auth = req.headers['authorization'];
-        if (auth && auth.startsWith('Bearer ')) {
-            const token = auth.split(' ')[1];
-            const decoded = verifyToken(token);
-            if (decoded) {
+    let adminUser = null;
+    const auth = req.headers['authorization'];
+    if (auth && auth.startsWith('Bearer ')) {
+        const token = auth.split(' ')[1];
+        const decoded = verifyToken(token);
+        if (decoded) {
+            if (decoded.openid) {
                 currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [decoded.openid])).rows[0];
-                if (currentUser) {
-                    const blacked = (await pool.query('SELECT openid FROM black_accounts WHERE openid=$1', [currentUser.openid])).rows[0];
-                    if (blacked) return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
-                }
-            }
-        }
-        if (!currentUser && !reqPath.startsWith('/api/admin/')) {
-            if (reqPath !== '/api/loan/contract/extend' && reqPath !== '/api/loan/contract/close') {
-                if (reqPath.startsWith('/api/loan/') && reqPath !== '/api/loan/login' && reqPath !== '/ping') {
-                    return sendJson(res, { code: 401, message: 'Unauthorized' }, 401);
-                }
+                if (currentUser && (await pool.query('SELECT openid FROM black_accounts WHERE openid=$1', [currentUser.openid])).rows[0])
+                    return sendJson(res, { code: 403, message: 'Account blocked' }, 403);
+            } else if (decoded.role) {
+                adminUser = decoded;
             }
         }
     }
 
-    let adminUser = null;
+    // 后台接口权限校验
     if (reqPath.startsWith('/api/admin/') && reqPath !== '/api/admin/login') {
-        const auth = req.headers['authorization'];
-        if (auth && auth.startsWith('Bearer ')) {
-            const token = auth.split(' ')[1];
-            const decoded = verifyToken(token);
-            if (decoded && decoded.role) {
-                adminUser = decoded;
-            }
-        }
         if (!adminUser) return sendJson(res, { code: 401, message: '请先登录后台' }, 401);
     }
 
@@ -261,171 +239,40 @@ const server = http.createServer(async (req, res) => {
         currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [currentUser.openid])).rows[0];
         return sendJson(res, { code: 200, user: currentUser });
     }
-
-    if (reqPath === '/api/loan/user/info' && req.method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401 }, 401);
-        return sendJson(res, { code: 200, user: currentUser });
-    }
-
+    if (reqPath === '/api/loan/user/info' && req.method === 'GET') { if (!currentUser) return sendJson(res, { code: 401 }, 401); return sendJson(res, { code: 200, user: currentUser }); }
     if (reqPath === '/api/loan/checkAuth' && req.method === 'GET') {
         if (!currentUser) return sendJson(res, { code: 401 }, 401);
         const authorized = (await pool.query('SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2',
             [currentUser.realname, currentUser.idcard])).rows[0];
         return sendJson(res, { code: 200, authorized: !!authorized });
     }
+    if (reqPath === '/api/loan/contract/list' && req.method === 'GET') { if (!currentUser) return sendJson(res, { code: 401 }, 401); const contracts = (await pool.query('SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC', [currentUser.openid])).rows; return sendJson(res, { code: 200, data: contracts }); }
+    if (reqPath === '/api/loan/contract/detail' && req.method === 'GET') { if (!currentUser) return sendJson(res, { code: 401 }, 401); const id = parseInt(url.searchParams.get('id')); const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); contract.extensions = (await pool.query('SELECT * FROM extensions WHERE contractId=$1 ORDER BY id', [id])).rows; return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid }); }
+    if (reqPath === '/api/loan/contract/create' && req.method === 'POST') { if (!currentUser) return sendJson(res, { code: 401 }, 401); if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' }); const authorized = (await pool.query('SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2', [currentUser.realname, currentUser.idcard])).rows[0]; if (!authorized) return sendJson(res, { code: 403, message: '未授权' }); const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature, amountChinese } = post; const contract = { id: Date.now(), lenderopenid: currentUser.openid, lendername: currentUser.realname, lenderidcard: currentUser.idcard, amount: parseFloat(amount), amountchinese: amountChinese || '', rate, reason: reason || 'other', paymethod: payMethod || 'other', startdate: startDate, enddate: endDate, lendersignature: lenderSignature || '', status: 'pending', createtime: beijingTime() }; await pool.query('INSERT INTO contracts(id,lenderopenid,lendername,lenderidcard,amount,amountchinese,rate,reason,paymethod,startdate,enddate,lendersignature,status,createtime) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)', [contract.id, contract.lenderopenid, contract.lendername, contract.lenderidcard, contract.amount, contract.amountchinese, contract.rate, contract.reason, contract.paymethod, contract.startdate, contract.enddate, contract.lendersignature, contract.status, contract.createtime]); return sendJson(res, { code: 200, contract }); }
+    if (reqPath === '/api/loan/contract/sign' && req.method === 'POST') { if (!currentUser) return sendJson(res, { code: 401 }, 401); if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 }); const { contractId, borrowerSignature } = post; await pool.query('UPDATE contracts SET borroweropenid=$1, borrowername=$2, borroweridcard=$3, borrowersignature=$4, status=$5 WHERE id=$6', [currentUser.openid, currentUser.realname, currentUser.idcard, borrowerSignature || '', 'active', contractId]); return sendJson(res, { code: 200, message: 'Signed' }); }
+    if (reqPath === '/api/loan/contract/extend' && req.method === 'POST') { const { contractId, newEndDate, reason } = post; const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 }); await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)', [contractId, newEndDate, reason || '手动延期', beijingTime()]); await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]); return sendJson(res, { code: 200, message: 'Extended' }); }
+    if (reqPath === '/api/loan/contract/close' && req.method === 'POST') { const { contractId } = post; const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 }); await pool.query('UPDATE contracts SET status=$1 WHERE id=$2', ['closed', contractId]); return sendJson(res, { code: 200, message: 'Closed' }); }
 
-    // 合同接口
-    if (reqPath === '/api/loan/contract/list' && req.method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401 }, 401);
-        const contracts = (await pool.query('SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC',
-            [currentUser.openid])).rows;
-        return sendJson(res, { code: 200, data: contracts });
-    }
-
-    if (reqPath === '/api/loan/contract/detail' && req.method === 'GET') {
-        if (!currentUser) return sendJson(res, { code: 401 }, 401);
-        const id = parseInt(url.searchParams.get('id'));
-        const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
-        if (!contract) return sendJson(res, { code: 404 });
-        contract.extensions = (await pool.query('SELECT * FROM extensions WHERE contractId=$1 ORDER BY id', [id])).rows;
-        return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid });
-    }
-
-    if (reqPath === '/api/loan/contract/create' && req.method === 'POST') {
-        if (!currentUser) return sendJson(res, { code: 401 }, 401);
-        if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' });
-        const authorized = (await pool.query('SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2',
-            [currentUser.realname, currentUser.idcard])).rows[0];
-        if (!authorized) return sendJson(res, { code: 403, message: '未授权' });
-        const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature, amountChinese } = post;
-        const contract = {
-            id: Date.now(), lenderopenid: currentUser.openid, lendername: currentUser.realname, lenderidcard: currentUser.idcard,
-            amount: parseFloat(amount), amountchinese: amountChinese || '', rate, reason: reason || 'other',
-            paymethod: payMethod || 'other', startdate: startDate, enddate: endDate, lendersignature: lenderSignature || '',
-            status: 'pending', createtime: beijingTime()
-        };
-        await pool.query('INSERT INTO contracts(id,lenderopenid,lendername,lenderidcard,amount,amountchinese,rate,reason,paymethod,startdate,enddate,lendersignature,status,createtime) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
-            [contract.id, contract.lenderopenid, contract.lendername, contract.lenderidcard, contract.amount, contract.amountchinese, contract.rate, contract.reason, contract.paymethod, contract.startdate, contract.enddate, contract.lendersignature, contract.status, contract.createtime]);
-        return sendJson(res, { code: 200, contract });
-    }
-
-    if (reqPath === '/api/loan/contract/sign' && req.method === 'POST') {
-        if (!currentUser) return sendJson(res, { code: 401 }, 401);
-        if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 });
-        const { contractId, borrowerSignature } = post;
-        await pool.query('UPDATE contracts SET borroweropenid=$1, borrowername=$2, borroweridcard=$3, borrowersignature=$4, status=$5 WHERE id=$6',
-            [currentUser.openid, currentUser.realname, currentUser.idcard, borrowerSignature || '', 'active', contractId]);
-        return sendJson(res, { code: 200, message: 'Signed' });
-    }
-
-    if (reqPath === '/api/loan/contract/extend' && req.method === 'POST') {
-        const { contractId, newEndDate, reason } = post;
-        const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
-        if (!contract) return sendJson(res, { code: 404 });
-        if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
-        await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)', [contractId, newEndDate, reason || '手动延期', beijingTime()]);
-        await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]);
-        return sendJson(res, { code: 200, message: 'Extended' });
-    }
-
-    if (reqPath === '/api/loan/contract/close' && req.method === 'POST') {
-        const { contractId } = post;
-        const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0];
-        if (!contract) return sendJson(res, { code: 404 });
-        if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 });
-        await pool.query('UPDATE contracts SET status=$1 WHERE id=$2', ['closed', contractId]);
-        return sendJson(res, { code: 200, message: 'Closed' });
-    }
-
-    // 后台管理接口（权限校验）
-    if (reqPath === '/api/admin/realname' && req.method === 'GET') {
-        const page = parseInt(url.searchParams.get('page')) || 1;
-        const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50);
-        const offset = (page - 1) * pageSize;
-        const countResult = await pool.query('SELECT COUNT(*) FROM real_applications');
-        const total = parseInt(countResult.rows[0].count);
-        const rows = (await pool.query('SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2', [pageSize, offset])).rows;
-        return sendJson(res, { code: 200, data: rows, page, pageSize, total });
-    }
-
-    if (reqPath === '/api/admin/realname/images' && req.method === 'GET') {
-        const id = parseInt(url.searchParams.get('id'));
-        const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0];
-        if (!row) return sendJson(res, { code: 404 });
-        return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } });
-    }
-
-    if (reqPath === '/api/admin/contracts' && req.method === 'GET') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
-        const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows;
-        return sendJson(res, { code: 200, data });
-    }
-
-    if (reqPath === '/api/admin/auth/list' && req.method === 'GET') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
-        const data = (await pool.query('SELECT * FROM authorized_users')).rows;
-        return sendJson(res, { code: 200, data });
-    }
-
-    if (reqPath === '/api/admin/auth/add' && req.method === 'POST') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
-        const { realName, idCard } = post;
-        if (!realName || !idCard) return sendJson(res, { code: 400, message: '姓名和身份证号不能为空' });
-        await pool.query('INSERT INTO authorized_users(realName, idCard) VALUES($1, $2) ON CONFLICT DO NOTHING', [realName, idCard]);
-        return sendJson(res, { code: 200 });
-    }
-
-    if (reqPath === '/api/admin/auth/remove' && req.method === 'POST') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
-        const { realName, idCard } = post;
-        await pool.query('DELETE FROM authorized_users WHERE realName=$1 AND idCard=$2', [realName, idCard]);
-        return sendJson(res, { code: 200 });
-    }
-
-    if (reqPath === '/api/admin/users' && req.method === 'GET') {
-        const users = (await pool.query('SELECT * FROM users')).rows;
-        const authList = (await pool.query('SELECT * FROM authorized_users')).rows;
-        const blackList = (await pool.query('SELECT openid FROM black_accounts')).rows.map(r => r.openid);
-        const result = users.map(u => ({
-            openid: u.openid, realName: u.realname, realStatus: u.realstatus, idCard: u.idcard,
-            authorized: !!authList.find(a => a.realname === u.realname && a.idcard === u.idcard),
-            blacked: blackList.includes(u.openid), realTime: u.realtime
-        }));
-        return sendJson(res, { code: 200, data: result });
-    }
-
-    if (reqPath === '/api/admin/user/delete' && req.method === 'POST') {
-        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
-        const { openid } = post;
-        const apps = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE openid=$1', [openid])).rows;
-        apps.forEach(app => {
-            [app.frontimg, app.backimg].forEach(imgPath => {
-                if (imgPath && imgPath.startsWith('/uploads/')) {
-                    const filepath = path.join(uploadsDir, imgPath.replace('/uploads/', ''));
-                    try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {}
-                }
-            });
-        });
-        await pool.query('DELETE FROM real_applications WHERE openid=$1', [openid]);
-        await pool.query('DELETE FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1', [openid]);
-        await pool.query('DELETE FROM authorized_users WHERE realName=(SELECT realName FROM users WHERE openid=$1) AND idCard=(SELECT idCard FROM users WHERE openid=$1)', [openid]);
-        await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]);
-        await pool.query('DELETE FROM users WHERE openid=$1', [openid]);
-        return sendJson(res, { code: 200, message: '删除成功' });
-    }
-
+    // 后台接口
+    if (reqPath === '/api/admin/realname' && req.method === 'GET') { const page = parseInt(url.searchParams.get('page')) || 1; const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50); const offset = (page - 1) * pageSize; const countResult = await pool.query('SELECT COUNT(*) FROM real_applications'); const total = parseInt(countResult.rows[0].count); const rows = (await pool.query('SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2', [pageSize, offset])).rows; return sendJson(res, { code: 200, data: rows, page, pageSize, total }); }
+    if (reqPath === '/api/admin/realname/images' && req.method === 'GET') { const id = parseInt(url.searchParams.get('id')); const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0]; if (!row) return sendJson(res, { code: 404 }); return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } }); }
+    if (reqPath === '/api/admin/contracts' && req.method === 'GET') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows; return sendJson(res, { code: 200, data }); }
+    if (reqPath === '/api/admin/auth/list' && req.method === 'GET') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const data = (await pool.query('SELECT * FROM authorized_users')).rows; return sendJson(res, { code: 200, data }); }
+    if (reqPath === '/api/admin/auth/add' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { realName, idCard } = post; if (!realName || !idCard) return sendJson(res, { code: 400, message: '姓名和身份证号不能为空' }); await pool.query('INSERT INTO authorized_users(realName, idCard) VALUES($1, $2) ON CONFLICT DO NOTHING', [realName, idCard]); return sendJson(res, { code: 200 }); }
+    if (reqPath === '/api/admin/auth/remove' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { realName, idCard } = post; await pool.query('DELETE FROM authorized_users WHERE realName=$1 AND idCard=$2', [realName, idCard]); return sendJson(res, { code: 200 }); }
+    if (reqPath === '/api/admin/users' && req.method === 'GET') { const users = (await pool.query('SELECT * FROM users')).rows; const authList = (await pool.query('SELECT * FROM authorized_users')).rows; const blackList = (await pool.query('SELECT openid FROM black_accounts')).rows.map(r => r.openid); const result = users.map(u => ({ openid: u.openid, realName: u.realname, realStatus: u.realstatus, idCard: u.idcard, authorized: !!authList.find(a => a.realname === u.realname && a.idcard === u.idcard), blacked: blackList.includes(u.openid), realTime: u.realtime })); return sendJson(res, { code: 200, data: result }); }
+    if (reqPath === '/api/admin/user/delete' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { openid } = post; const apps = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE openid=$1', [openid])).rows; apps.forEach(app => { [app.frontimg, app.backimg].forEach(imgPath => { if (imgPath && imgPath.startsWith('/uploads/')) { const filepath = path.join(uploadsDir, imgPath.replace('/uploads/', '')); try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {} } }); }); await pool.query('DELETE FROM real_applications WHERE openid=$1', [openid]); await pool.query('DELETE FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1', [openid]); await pool.query('DELETE FROM authorized_users WHERE realName=(SELECT realName FROM users WHERE openid=$1) AND idCard=(SELECT idCard FROM users WHERE openid=$1)', [openid]); await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]); await pool.query('DELETE FROM users WHERE openid=$1', [openid]); return sendJson(res, { code: 200, message: '删除成功' }); }
     if (reqPath === '/api/admin/black/account' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { openid } = post; await pool.query('INSERT INTO black_accounts(openid) VALUES($1) ON CONFLICT DO NOTHING', [openid]); return sendJson(res, { code: 200 }); }
     if (reqPath === '/api/admin/black/unaccount' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { openid } = post; await pool.query('DELETE FROM black_accounts WHERE openid=$1', [openid]); return sendJson(res, { code: 200 }); }
     if (reqPath === '/api/admin/black/ip' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { ip } = post; await pool.query('INSERT INTO black_ips(ip) VALUES($1) ON CONFLICT DO NOTHING', [ip]); return sendJson(res, { code: 200 }); }
     if (reqPath === '/api/admin/black/unip' && req.method === 'POST') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const { ip } = post; await pool.query('DELETE FROM black_ips WHERE ip=$1', [ip]); return sendJson(res, { code: 200 }); }
 
-    // 后台账号管理接口
+    // 后台账号管理
     if (reqPath === '/api/admin/accounts' && req.method === 'GET') {
         if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const accounts = (await pool.query('SELECT id, username, role FROM admin_accounts ORDER BY id')).rows;
         return sendJson(res, { code: 200, data: accounts });
     }
-
     if (reqPath === '/api/admin/change-password' && req.method === 'POST') {
         if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { username, oldPassword, newPassword } = post;
@@ -435,19 +282,15 @@ const server = http.createServer(async (req, res) => {
         await pool.query('UPDATE admin_accounts SET password=$1 WHERE username=$2', [newPassword, username]);
         return sendJson(res, { code: 200, message: '密码修改成功' });
     }
-
-    // 修改用户名
     if (reqPath === '/api/admin/change-username' && req.method === 'POST') {
         if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { username, newUsername } = post;
         if (!username || !newUsername) return sendJson(res, { code: 400, message: '参数不完整' });
-        // 检查新用户名是否已存在
         const exist = (await pool.query('SELECT * FROM admin_accounts WHERE username=$1', [newUsername])).rows[0];
         if (exist) return sendJson(res, { code: 400, message: '用户名已存在' }, 400);
         await pool.query('UPDATE admin_accounts SET username=$1 WHERE username=$2', [newUsername, username]);
         return sendJson(res, { code: 200, message: '用户名修改成功' });
     }
-
     if (reqPath === '/api/admin/delete-account' && req.method === 'POST') {
         if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
         const { username } = post;
