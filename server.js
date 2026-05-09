@@ -91,6 +91,11 @@ async function initDB() {
             password TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'staff'
         );
+        -- ✅ 新增：系统设置表（用于自动授权开关等配置）
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
     `);
 
     // 插入默认账号
@@ -103,8 +108,12 @@ async function initDB() {
             "INSERT INTO admin_accounts (username, password, role) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
             ['staff', 'staff123456', 'staff']
         );
+        // ✅ 初始化自动授权开关（默认关闭）
+        await pool.query(
+            "INSERT INTO settings (key, value) VALUES ('auto_auth', 'false') ON CONFLICT (key) DO NOTHING"
+        );
     } catch (e) {
-        console.error('插入默认账号失败:', e);
+        console.error('插入默认数据失败:', e);
     }
 
     console.log('数据库初始化完成');
@@ -192,7 +201,7 @@ const server = http.createServer(async (req, res) => {
 
     if (reqPath === '/ping') return sendJson(res, { code: 200, message: 'ok' });
 
-    // 后台登录接口，注意后台接口会放在 /api/admin/ 命名空间下，之后需要权限校验
+    // 后台登录接口
     if (reqPath === '/api/admin/login' && req.method === 'POST') {
         const { username, password } = post;
         if (!username || !password) return sendJson(res, { code: 400, message: '账号和密码不能为空' });
@@ -225,7 +234,7 @@ const server = http.createServer(async (req, res) => {
         if (!adminUser) return sendJson(res, { code: 401, message: '请先登录后台' }, 401);
     }
 
-    // 用户接口
+    // ========== 用户接口 ==========
     if (reqPath === '/api/loan/realname' && req.method === 'POST') {
         if (!currentUser) return sendJson(res, { code: 401 }, 401);
         const { realName, idCard, frontImg, backImg } = post;
@@ -236,6 +245,16 @@ const server = http.createServer(async (req, res) => {
             [realName, idCard, 'verified', beijingTime(), currentUser.openid]);
         await pool.query('INSERT INTO real_applications(id, openid, realName, idCard, frontImg, backImg, status, time) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
             [Date.now(), currentUser.openid, realName, idCard, frontImgPath, backImgPath, 'approved', beijingTime()]);
+
+        // ✅ 检查自动授权开关状态，如果开启则自动加入授权列表
+        const autoAuth = (await pool.query("SELECT value FROM settings WHERE key='auto_auth'")).rows[0];
+        if (autoAuth && autoAuth.value === 'true') {
+            await pool.query(
+                'INSERT INTO authorized_users (realName, idCard) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [realName, idCard]
+            );
+        }
+
         currentUser = (await pool.query('SELECT * FROM users WHERE openid=$1', [currentUser.openid])).rows[0];
         return sendJson(res, { code: 200, user: currentUser });
     }
@@ -253,7 +272,7 @@ const server = http.createServer(async (req, res) => {
     if (reqPath === '/api/loan/contract/extend' && req.method === 'POST') { const { contractId, newEndDate, reason } = post; const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 }); await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)', [contractId, newEndDate, reason || '手动延期', beijingTime()]); await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]); return sendJson(res, { code: 200, message: 'Extended' }); }
     if (reqPath === '/api/loan/contract/close' && req.method === 'POST') { const { contractId } = post; const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 }); await pool.query('UPDATE contracts SET status=$1 WHERE id=$2', ['closed', contractId]); return sendJson(res, { code: 200, message: 'Closed' }); }
 
-    // 后台接口
+    // ========== 后台管理接口 ==========
     if (reqPath === '/api/admin/realname' && req.method === 'GET') { const page = parseInt(url.searchParams.get('page')) || 1; const pageSize = Math.min(parseInt(url.searchParams.get('pageSize')) || 20, 50); const offset = (page - 1) * pageSize; const countResult = await pool.query('SELECT COUNT(*) FROM real_applications'); const total = parseInt(countResult.rows[0].count); const rows = (await pool.query('SELECT id, openid, realName, idCard, frontImg, backImg, status, time FROM real_applications ORDER BY id DESC LIMIT $1 OFFSET $2', [pageSize, offset])).rows; return sendJson(res, { code: 200, data: rows, page, pageSize, total }); }
     if (reqPath === '/api/admin/realname/images' && req.method === 'GET') { const id = parseInt(url.searchParams.get('id')); const row = (await pool.query('SELECT frontImg, backImg FROM real_applications WHERE id=$1', [id])).rows[0]; if (!row) return sendJson(res, { code: 404 }); return sendJson(res, { code: 200, data: { frontImg: row.frontimg || '', backImg: row.backimg || '' } }); }
     if (reqPath === '/api/admin/contracts' && req.method === 'GET') { if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403); const data = (await pool.query('SELECT * FROM contracts ORDER BY id DESC')).rows; return sendJson(res, { code: 200, data }); }
@@ -298,6 +317,23 @@ const server = http.createServer(async (req, res) => {
         if (username === adminUser.username) return sendJson(res, { code: 400, message: '不能删除自己的账号' }, 400);
         await pool.query('DELETE FROM admin_accounts WHERE username=$1', [username]);
         return sendJson(res, { code: 200, message: '账号已删除' });
+    }
+
+    // ✅ 新增：自动授权开关接口
+    if (reqPath === '/api/admin/auto-auth/status' && req.method === 'GET') {
+        const row = (await pool.query("SELECT value FROM settings WHERE key='auto_auth'")).rows[0];
+        const enabled = row ? row.value === 'true' : false;
+        return sendJson(res, { code: 200, enabled });
+    }
+
+    if (reqPath === '/api/admin/auto-auth/toggle' && req.method === 'POST') {
+        if (adminUser.role !== 'admin') return sendJson(res, { code: 403, message: '无权限' }, 403);
+        const { enabled } = post;
+        await pool.query(
+            "INSERT INTO settings (key, value) VALUES ('auto_auth', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+            [enabled ? 'true' : 'false']
+        );
+        return sendJson(res, { code: 200, message: '设置成功', enabled });
     }
 
     sendJson(res, { code: 404 }, 404);
