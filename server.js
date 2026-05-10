@@ -265,8 +265,35 @@ const server = http.createServer(async (req, res) => {
             [currentUser.realname, currentUser.idcard])).rows[0];
         return sendJson(res, { code: 200, authorized: !!authorized });
     }
-    if (reqPath === '/api/loan/contract/list' && req.method === 'GET') { if (!currentUser) return sendJson(res, { code: 401 }, 401); const contracts = (await pool.query('SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC', [currentUser.openid])).rows; return sendJson(res, { code: 200, data: contracts }); }
-    if (reqPath === '/api/loan/contract/detail' && req.method === 'GET') { if (!currentUser) return sendJson(res, { code: 401 }, 401); const id = parseInt(url.searchParams.get('id')); const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); contract.extensions = (await pool.query('SELECT * FROM extensions WHERE contractId=$1 ORDER BY id', [id])).rows; return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid }); }
+
+    // ✅ 合同列表 - 自动判断逾期
+    if (reqPath === '/api/loan/contract/list' && req.method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401 }, 401);
+        const contracts = (await pool.query('SELECT * FROM contracts WHERE lenderopenid=$1 OR borroweropenid=$1 ORDER BY id DESC', [currentUser.openid])).rows;
+        const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const processed = contracts.map(c => {
+            if (c.status === 'active' && c.enddate && c.enddate <= today) {
+                return { ...c, status: 'overdue' };
+            }
+            return c;
+        });
+        return sendJson(res, { code: 200, data: processed });
+    }
+
+    // ✅ 合同详情 - 自动判断逾期
+    if (reqPath === '/api/loan/contract/detail' && req.method === 'GET') {
+        if (!currentUser) return sendJson(res, { code: 401 }, 401);
+        const id = parseInt(url.searchParams.get('id'));
+        const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [id])).rows[0];
+        if (!contract) return sendJson(res, { code: 404 });
+        contract.extensions = (await pool.query('SELECT * FROM extensions WHERE contractId=$1 ORDER BY id', [id])).rows;
+        const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().split('T')[0];
+        if (contract.status === 'active' && contract.enddate && contract.enddate <= today) {
+            contract.status = 'overdue';
+        }
+        return sendJson(res, { code: 200, data: contract, isLender: contract.lenderopenid === currentUser.openid });
+    }
+
     if (reqPath === '/api/loan/contract/create' && req.method === 'POST') { if (!currentUser) return sendJson(res, { code: 401 }, 401); if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400, message: '请先实名' }); const authorized = (await pool.query('SELECT * FROM authorized_users WHERE realName=$1 AND idCard=$2', [currentUser.realname, currentUser.idcard])).rows[0]; if (!authorized) return sendJson(res, { code: 403, message: '未授权' }); const { amount, rate, reason, payMethod, startDate, endDate, lenderSignature, amountChinese } = post; const contract = { id: Date.now(), lenderopenid: currentUser.openid, lendername: currentUser.realname, lenderidcard: currentUser.idcard, amount: parseFloat(amount), amountchinese: amountChinese || '', rate, reason: reason || 'other', paymethod: payMethod || 'other', startdate: startDate, enddate: endDate, lendersignature: lenderSignature || '', status: 'pending', createtime: beijingTime() }; await pool.query('INSERT INTO contracts(id,lenderopenid,lendername,lenderidcard,amount,amountchinese,rate,reason,paymethod,startdate,enddate,lendersignature,status,createtime) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)', [contract.id, contract.lenderopenid, contract.lendername, contract.lenderidcard, contract.amount, contract.amountchinese, contract.rate, contract.reason, contract.paymethod, contract.startdate, contract.enddate, contract.lendersignature, contract.status, contract.createtime]); return sendJson(res, { code: 200, contract }); }
     if (reqPath === '/api/loan/contract/sign' && req.method === 'POST') { if (!currentUser) return sendJson(res, { code: 401 }, 401); if (currentUser.realstatus !== 'verified') return sendJson(res, { code: 400 }); const { contractId, borrowerSignature } = post; await pool.query('UPDATE contracts SET borroweropenid=$1, borrowername=$2, borroweridcard=$3, borrowersignature=$4, status=$5 WHERE id=$6', [currentUser.openid, currentUser.realname, currentUser.idcard, borrowerSignature || '', 'active', contractId]); return sendJson(res, { code: 200, message: 'Signed' }); }
     if (reqPath === '/api/loan/contract/extend' && req.method === 'POST') { const { contractId, newEndDate, reason } = post; const contract = (await pool.query('SELECT * FROM contracts WHERE id=$1', [contractId])).rows[0]; if (!contract) return sendJson(res, { code: 404 }); if (currentUser && contract.lenderopenid !== currentUser.openid) return sendJson(res, { code: 403 }); await pool.query('INSERT INTO extensions(contractId, date, reason, time) VALUES($1,$2,$3,$4)', [contractId, newEndDate, reason || '手动延期', beijingTime()]); await pool.query('UPDATE contracts SET enddate=$1, status=$2 WHERE id=$3', [newEndDate, 'active', contractId]); return sendJson(res, { code: 200, message: 'Extended' }); }
